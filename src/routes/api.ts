@@ -10,6 +10,14 @@ import type { InteractionOptions } from '../client/IG-bot/types';
 
 const router = express.Router();
 
+const validSameSiteValues = new Set(['lax', 'strict', 'none']);
+const rawSameSite = process.env.COOKIE_SAMESITE?.toLowerCase();
+const cookieSameSite: 'lax' | 'strict' | 'none' =
+  rawSameSite && validSameSiteValues.has(rawSameSite)
+    ? (rawSameSite as 'lax' | 'strict' | 'none')
+    : 'lax';
+const cookieSecure = process.env.COOKIE_SECURE === 'true';
+
 // JWT Auth middleware
 function requireAuth(req: Request, res: Response, next: Function) {
   const token = getTokenFromRequest(req);
@@ -23,11 +31,26 @@ function requireAuth(req: Request, res: Response, next: Function) {
 }
 
 // Status endpoint
-router.get('/status', (_req: Request, res: Response) => {
-    const status = {
-        dbConnected: mongoose.connection.readyState === 1
-    };
-    return res.json(status);
+router.get('/status', (req: Request, res: Response) => {
+  const dbConnected = mongoose.connection.readyState === 1;
+  const token = getTokenFromRequest(req);
+  let authenticated = false;
+  let username: string | null = null;
+
+  if (token) {
+    const payload = verifyToken(token);
+    if (payload && typeof payload === 'object' && 'username' in payload) {
+      authenticated = true;
+      username = (payload as { username: string }).username;
+    }
+  }
+
+  return res.json({
+    status: dbConnected ? 'Online' : 'Offline',
+    dbConnected,
+    authenticated,
+    username,
+  });
 });
 
 // Login endpoint
@@ -42,9 +65,9 @@ router.post('/login', async (req: Request, res: Response) => {
     const token = signToken({ username });
     res.cookie('token', token, {
       httpOnly: true,
-      sameSite: 'lax',
+      sameSite: cookieSameSite,
       maxAge: 2 * 60 * 60 * 1000, // 2 hours
-      secure: process.env.NODE_ENV === 'production',
+      secure: cookieSecure,
     });
     return res.json({ message: 'Login successful' });
   } catch (error) {
@@ -325,8 +348,8 @@ router.post('/exit', async (_req: Request, res: Response) => {
 router.post('/logout', (req: Request, res: Response) => {
   res.clearCookie('token', {
     httpOnly: true,
-    sameSite: 'lax',
-    secure: process.env.NODE_ENV === 'production',
+    sameSite: cookieSameSite,
+    secure: cookieSecure,
   });
   return res.json({ message: 'Logged out successfully' });
 });
