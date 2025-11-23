@@ -836,7 +836,13 @@ Generate a friendly, helpful reply that:
             // Click on the first post from explore
             console.log(`Opening first post from Explore...`);
             await page.waitForSelector('a[href*="/p/"], a[href*="/reel/"]', { timeout: 10000 }).catch(() => null);
-            const firstPost = await page.$('a[href*="/p/"]') || await page.$('a[href*="/reel/"]');
+            
+            // Try multiple selectors for finding posts
+            let firstPost = await page.$('a[href*="/p/"]');
+            if (!firstPost) firstPost = await page.$('a[href*="/reel/"]');
+            if (!firstPost) firstPost = await page.$('article a[role="link"]');
+            if (!firstPost) firstPost = await page.$('div[role="button"] a');
+            
             if (firstPost) {
                 console.log(`Found post, clicking...`);
                 await firstPost.click();
@@ -845,6 +851,22 @@ Generate a friendly, helpful reply that:
                 console.log(`Post opened, starting interactions...`);
             } else {
                 console.log(`No posts found on Explore page.`);
+                // Capture screenshot for debugging
+                await this.captureGenericPageScreenshot(page, 'feed-screens', 'explore-no-posts');
+                
+                // Log what's on the page
+                const pageContent = await page.evaluate(() => {
+                    const links = document.querySelectorAll('a');
+                    const postLinks = Array.from(links).filter(a => 
+                        a.href.includes('/p/') || a.href.includes('/reel/')
+                    );
+                    return {
+                        totalLinks: links.length,
+                        postLinks: postLinks.length,
+                        bodyText: document.body.innerText.substring(0, 500)
+                    };
+                });
+                console.log('📊 Page analysis:', JSON.stringify(pageContent, null, 2));
                 return;
             }
         } else if (activeMode === 'hashtag') {
@@ -965,6 +987,23 @@ Generate a friendly, helpful reply that:
                 const postSelector = isSinglePostView ? `article:nth-of-type(1)` : `article:nth-of-type(${postIndex})`;
                 // Check if the post exists
                 if (!(await page.$(postSelector))) {
+                    console.log(`No post found at selector: ${postSelector}`);
+                    
+                    // Debug: Check what articles exist on the page
+                    const articleCount = await page.evaluate(() => {
+                        const articles = document.querySelectorAll('article');
+                        return {
+                            count: articles.length,
+                            hasMain: !!document.querySelector('main'),
+                            hasRole: !!document.querySelector('[role="main"]'),
+                            bodyText: document.body.innerText.substring(0, 300)
+                        };
+                    });
+                    console.log('📊 Page article analysis:', JSON.stringify(articleCount, null, 2));
+                    
+                    // Capture screenshot for debugging
+                    await this.captureGenericPageScreenshot(page, 'feed-screens', `no-posts-index-${postIndex}`);
+                    
                     console.log("No more posts found. Ending iteration...");
                     return;
                 }
