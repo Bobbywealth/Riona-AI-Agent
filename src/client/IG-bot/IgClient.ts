@@ -227,7 +227,12 @@ export class IgClient {
         // Prepare launch args
         const launchArgs = [
             `--window-size=${width},${height}`,
-            `--window-position=${left},${top}`
+            `--window-position=${left},${top}`,
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-accelerated-2d-canvas',
+            '--disable-gpu'
         ];
         
         // Add proxy if enabled
