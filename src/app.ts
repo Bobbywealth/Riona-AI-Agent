@@ -1,7 +1,7 @@
 import express, { Application } from "express";
 import cookieParser from "cookie-parser";
 import dotenv from "dotenv";
-import helmet from "helmet"; // For securing HTTP headers
+// import helmet from "helmet"; // For securing HTTP headers
 import cors from "cors";
 import session from 'express-session';
 
@@ -30,9 +30,10 @@ app.use(cors({
     origin: true,
     credentials: true,
 }));
-app.use(helmet({
-    contentSecurityPolicy: false,
-}));
+// Temporarily disable helmet to allow dashboard inline scripts
+// app.use(helmet({
+//     contentSecurityPolicy: false,
+// }));
 app.use(express.json()); // JSON body parsing
 app.use(express.urlencoded({ extended: true, limit: "1kb" })); // URL-encoded data
 app.use(cookieParser()); // Cookie parsing
