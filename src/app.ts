@@ -31,12 +31,7 @@ app.use(cors({
     credentials: true,
 }));
 app.use(helmet({
-    contentSecurityPolicy: {
-        directives: {
-            ...helmet.contentSecurityPolicy.getDefaultDirectives(),
-            "script-src": ["'self'", "'unsafe-inline'"],
-        },
-    },
+    contentSecurityPolicy: false,
 }));
 app.use(express.json()); // JSON body parsing
 app.use(express.urlencoded({ extended: true, limit: "1kb" })); // URL-encoded data
