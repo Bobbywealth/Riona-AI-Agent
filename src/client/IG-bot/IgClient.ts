@@ -224,7 +224,7 @@ export class IgClient {
         const left = Math.floor((screenWidth - width) / 2);
         const top = Math.floor((screenHeight - height) / 2);
         
-        // Prepare launch args
+        // Prepare launch args with better stealth
         const launchArgs = [
             `--window-size=${width},${height}`,
             `--window-position=${left},${top}`,
@@ -232,7 +232,10 @@ export class IgClient {
             '--disable-setuid-sandbox',
             '--disable-dev-shm-usage',
             '--disable-accelerated-2d-canvas',
-            '--disable-gpu'
+            '--disable-gpu',
+            '--disable-blink-features=AutomationControlled',
+            '--disable-features=IsolateOrigins,site-per-process',
+            '--lang=en-US,en;q=0.9'
         ];
         
         // Add proxy if enabled
@@ -249,9 +252,41 @@ export class IgClient {
             args: launchArgs,
         });
         this.page = await this.browser.newPage();
+        
+        // Set realistic user agent
         const userAgent = new UserAgent({ deviceCategory: "desktop" });
         await this.page.setUserAgent(userAgent.toString());
         await this.page.setViewport({ width, height });
+        
+        // Add extra stealth measures
+        await this.page.evaluateOnNewDocument(() => {
+            // Override the navigator.webdriver property
+            Object.defineProperty(navigator, 'webdriver', {
+                get: () => undefined,
+            });
+            
+            // Mock plugins
+            Object.defineProperty(navigator, 'plugins', {
+                get: () => [1, 2, 3, 4, 5],
+            });
+            
+            // Mock languages
+            Object.defineProperty(navigator, 'languages', {
+                get: () => ['en-US', 'en'],
+            });
+            
+            // Chrome runtime
+            (window as any).chrome = {
+                runtime: {},
+            };
+            
+            // Permissions
+            const originalQuery = window.navigator.permissions.query;
+            window.navigator.permissions.query = (parameters: any) =>
+                parameters.name === 'notifications'
+                    ? Promise.resolve({ state: Notification.permission } as PermissionStatus)
+                    : originalQuery(parameters);
+        });
 
         if (await Instagram_cookiesExist()) {
             await this.loginWithCookies();
@@ -270,7 +305,23 @@ export class IgClient {
         logger.info("Loaded cookies. Navigating to Instagram home page.");
         await this.page.goto("https://www.instagram.com/", {
             waitUntil: "networkidle2",
+            timeout: 60000
         });
+        
+        // Wait a bit for page to fully load
+        await delay(3000);
+        
+        // Check for rate limiting
+        if (await this.checkForRateLimit()) {
+            logger.error('🚫 Rate limited immediately after loading. Your IP may be temporarily blocked.');
+            logger.info('💡 Suggestions:');
+            logger.info('   1. Wait 15-30 minutes before trying again');
+            logger.info('   2. Use a proxy or VPN');
+            logger.info('   3. Try from a different IP address');
+            logger.info('   4. Reduce bot activity frequency');
+            throw new Error('Instagram rate limit detected');
+        }
+        
         const url = this.page.url();
         if (url.includes("/login/")) {
             logger.warn("Cookies are invalid or expired. Falling back to credentials login.");
@@ -306,6 +357,33 @@ export class IgClient {
         // Capture screenshot after login
         console.log(`📸 Capturing post-login screenshot...`);
         await this.captureGenericPageScreenshot(this.page, 'feed-screens', 'after-login');
+    }
+
+    private async checkForRateLimit(): Promise<boolean> {
+        if (!this.page) return false;
+        
+        try {
+            const bodyText = await this.page.evaluate(() => document.body.innerText);
+            
+            // Check for rate limit indicators
+            if (bodyText.includes('HTTP ERROR 429') || 
+                bodyText.includes('Too Many Requests') ||
+                bodyText.includes('Try Again Later')) {
+                logger.warn('⚠️ Instagram rate limit detected! Waiting before retry...');
+                return true;
+            }
+            
+            // Check if we're on an error page
+            const url = this.page.url();
+            if (url.includes('challenge') || url.includes('suspended')) {
+                logger.error('🚫 Account challenge or suspension detected!');
+                return true;
+            }
+            
+            return false;
+        } catch (error) {
+            return false;
+        }
     }
 
     async handleNotificationPopup(): Promise<boolean> {

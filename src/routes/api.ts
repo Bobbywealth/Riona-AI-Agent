@@ -219,11 +219,13 @@ router.get('/screenshots/view/:type/:filename', async (req: Request, res: Respon
       return res.status(404).json({ error: 'Screenshot not found' });
     }
 
-    // Send the image file
+    // Send the image file with caching headers
+    res.setHeader('Cache-Control', 'public, max-age=3600'); // Cache for 1 hour
+    res.setHeader('Content-Type', 'image/png');
     return res.sendFile(screenshotPath);
   } catch (error) {
     logger.error('Screenshot view error:', error);
-    return res.status(500).json({ error: 'Failed to load screenshot' });
+    return res.status(500).json({ error: 'Failed to load screenshot', details: String(error) });
   }
 });
 
