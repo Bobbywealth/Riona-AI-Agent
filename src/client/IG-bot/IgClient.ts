@@ -245,7 +245,7 @@ export class IgClient {
         }
         
         this.browser = await puppeteerExtra.launch({
-            headless: 'new', // Use new headless mode (faster and more stable on servers)
+            headless: true, // Run in headless mode (no GUI needed on server)
             args: launchArgs,
         });
         this.page = await this.browser.newPage();
