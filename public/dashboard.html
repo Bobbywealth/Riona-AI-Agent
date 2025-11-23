@@ -486,6 +486,47 @@
                 </div>
             </div>
             
+            <!-- Proxy Configuration -->
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-icon">🌐</div>
+                    <h2>Proxy Settings</h2>
+                </div>
+                <div class="status-message info mb-2">
+                    ℹ️ Using a proxy helps avoid Instagram rate limits and IP blocks
+                </div>
+                <div class="checkbox-group">
+                    <input type="checkbox" id="proxyEnabled">
+                    <label style="margin: 0;">Enable Proxy</label>
+                </div>
+                <div id="proxyFields" class="hidden">
+                    <div class="form-group">
+                        <label>Proxy Host</label>
+                        <input type="text" id="proxyHost" placeholder="proxy.example.com">
+                    </div>
+                    <div class="form-group">
+                        <label>Proxy Port</label>
+                        <input type="number" id="proxyPort" placeholder="8080">
+                    </div>
+                    <div class="form-group">
+                        <label>Proxy Username (optional)</label>
+                        <input type="text" id="proxyUsername" placeholder="username">
+                    </div>
+                    <div class="form-group">
+                        <label>Proxy Password (optional)</label>
+                        <input type="password" id="proxyPassword" placeholder="password">
+                    </div>
+                    <button class="btn-primary" onclick="saveProxySettings()">💾 Save Proxy Settings</button>
+                </div>
+                <div class="loading hidden" id="loadingProxy">
+                    <div class="spinner"></div>
+                    <span>Saving...</span>
+                </div>
+                <div id="proxyStatus" class="status-message info mt-2 hidden">
+                    ℹ️ Proxy status
+                </div>
+            </div>
+            
             <!-- Quick Actions -->
             <div class="card">
                 <div class="card-header">
@@ -818,6 +859,67 @@
             
             loading.classList.remove('active');
             addLog('✅ Cookies cleared');
+        }
+
+        // Proxy configuration functions
+        function toggleProxyFields() {
+            const enabled = document.getElementById('proxyEnabled').checked;
+            const fields = document.getElementById('proxyFields');
+            fields.classList.toggle('hidden', !enabled);
+        }
+
+        async function saveProxySettings() {
+            const enabled = document.getElementById('proxyEnabled').checked;
+            const host = document.getElementById('proxyHost').value.trim();
+            const port = document.getElementById('proxyPort').value.trim();
+            const username = document.getElementById('proxyUsername').value.trim();
+            const password = document.getElementById('proxyPassword').value.trim();
+            
+            if (enabled && (!host || !port)) {
+                alert('Please enter proxy host and port');
+                return;
+            }
+            
+            const loading = document.getElementById('loadingProxy');
+            const statusDiv = document.getElementById('proxyStatus');
+            loading.classList.remove('hidden');
+            statusDiv.classList.add('hidden');
+            addLog('🌐 Saving proxy settings...');
+            
+            const result = await apiCall('/api/proxy/configure', 'POST', {
+                enabled,
+                host,
+                port,
+                username,
+                password
+            });
+            
+            loading.classList.add('hidden');
+            statusDiv.classList.remove('hidden');
+            
+            if (result.error) {
+                statusDiv.className = 'status-message error mt-2';
+                statusDiv.innerHTML = `❌ ${result.error}`;
+                addLog('❌ Failed to save proxy settings: ' + result.error);
+            } else {
+                statusDiv.className = 'status-message success mt-2';
+                statusDiv.innerHTML = `✅ ${result.message}`;
+                addLog('✅ Proxy settings saved. Restart bot to apply changes.');
+                if (enabled) {
+                    addLog(`🌐 Proxy: ${host}:${port}`);
+                }
+            }
+        }
+
+        async function loadProxySettings() {
+            const result = await apiCall('/api/proxy/status');
+            if (result && !result.error) {
+                document.getElementById('proxyEnabled').checked = result.enabled || false;
+                document.getElementById('proxyHost').value = result.host || '';
+                document.getElementById('proxyPort').value = result.port || '';
+                document.getElementById('proxyUsername').value = result.username || '';
+                toggleProxyFields();
+            }
         }
 
         async function checkStatus() {
@@ -1173,12 +1275,16 @@
         window.onload = () => {
             checkStatus();
             updateInteractionFields();
+            loadProxySettings();
             
             // Auto-fill username if saved
             const savedUsername = localStorage.getItem('savedUsername');
             if (savedUsername) {
                 document.getElementById('loginUsername').value = savedUsername;
             }
+            
+            // Add proxy checkbox listener
+            document.getElementById('proxyEnabled').addEventListener('change', toggleProxyFields);
             
             addLog('🤖 Dashboard loaded - Marketing Team App');
             addLog('💡 Ready to generate leads!');

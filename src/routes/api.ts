@@ -615,4 +615,99 @@ router.post('/proxy/test', async (req: Request, res: Response) => {
   }
 });
 
+// Proxy configuration endpoints
+router.post('/proxy/configure', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const { enabled, host, port, username, password } = req.body;
+    
+    // Read current .env file
+    const envPath = path.join(__dirname, '../../.env');
+    let envContent = '';
+    
+    try {
+      envContent = await fs.readFile(envPath, 'utf-8');
+    } catch (error) {
+      // .env doesn't exist, create new one
+      envContent = '';
+    }
+    
+    // Parse existing env vars
+    const envVars = new Map<string, string>();
+    envContent.split('\n').forEach(line => {
+      const match = line.match(/^([^=]+)=(.*)$/);
+      if (match) {
+        envVars.set(match[1].trim(), match[2].trim());
+      }
+    });
+    
+    // Update proxy settings
+    envVars.set('PROXY_ENABLED', enabled ? 'true' : 'false');
+    envVars.set('PROXY_HOST', host || '');
+    envVars.set('PROXY_PORT', port || '');
+    envVars.set('PROXY_USERNAME', username || '');
+    envVars.set('PROXY_PASSWORD', password || '');
+    
+    // Write back to .env
+    const newEnvContent = Array.from(envVars.entries())
+      .map(([key, value]) => `${key}=${value}`)
+      .join('\n');
+    
+    await fs.writeFile(envPath, newEnvContent, 'utf-8');
+    
+    // Reload environment variables
+    dotenv.config({ override: true });
+    
+    logger.info(`Proxy settings updated: ${enabled ? 'enabled' : 'disabled'}`);
+    
+    res.json({
+      success: true,
+      message: enabled 
+        ? `Proxy configured: ${host}:${port}. Restart bot to apply changes.`
+        : 'Proxy disabled. Restart bot to apply changes.'
+    });
+  } catch (error) {
+    logger.error('Error saving proxy settings:', error);
+    res.status(500).json({ error: 'Failed to save proxy settings' });
+  }
+});
+
+router.get('/proxy/status', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const envPath = path.join(__dirname, '../../.env');
+    let envContent = '';
+    
+    try {
+      envContent = await fs.readFile(envPath, 'utf-8');
+    } catch (error) {
+      // .env doesn't exist
+      return res.json({
+        enabled: false,
+        host: '',
+        port: '',
+        username: ''
+      });
+    }
+    
+    // Parse env vars
+    const envVars = new Map<string, string>();
+    envContent.split('\n').forEach(line => {
+      const match = line.match(/^([^=]+)=(.*)$/);
+      if (match) {
+        envVars.set(match[1].trim(), match[2].trim());
+      }
+    });
+    
+    res.json({
+      enabled: envVars.get('PROXY_ENABLED') === 'true',
+      host: envVars.get('PROXY_HOST') || '',
+      port: envVars.get('PROXY_PORT') || '',
+      username: envVars.get('PROXY_USERNAME') || ''
+      // Don't send password back for security
+    });
+  } catch (error) {
+    logger.error('Error reading proxy settings:', error);
+    res.status(500).json({ error: 'Failed to read proxy settings' });
+  }
+});
+
 export default router; 
