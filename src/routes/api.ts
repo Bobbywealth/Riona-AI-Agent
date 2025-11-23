@@ -66,20 +66,22 @@ router.get('/status', (req: Request, res: Response) => {
 // Login endpoint
 router.post('/login', async (req: Request, res: Response) => {
   try {
-    const { username, password } = req.body;
+    const { username, password, rememberMe } = req.body;
     if (!username || !password) {
       return res.status(400).json({ error: 'Username and password are required' });
     }
     const igClient = await getIgClient(username, password);
     // Sign JWT and set as httpOnly cookie
     const token = signToken({ username });
+    // Use 7 days if rememberMe is true, otherwise 2 hours
+    const maxAge = rememberMe ? 7 * 24 * 60 * 60 * 1000 : 2 * 60 * 60 * 1000;
     res.cookie('token', token, {
       httpOnly: true,
       sameSite: cookieSameSite,
-      maxAge: 2 * 60 * 60 * 1000, // 2 hours
+      maxAge,
       secure: cookieSecure,
     });
-    return res.json({ message: 'Login successful' });
+    return res.json({ message: 'Login successful', username });
   } catch (error) {
     logger.error('Login error:', error);
     return res.status(500).json({ error: 'Failed to login' });

@@ -429,6 +429,10 @@
                     <label>Instagram Password</label>
                     <input type="password" id="loginPassword" placeholder="••••••••">
                 </div>
+                <div class="checkbox-group">
+                    <input type="checkbox" id="rememberMeCheckbox" checked>
+                    <label style="margin: 0;">Remember me for 7 days</label>
+                </div>
                 <button class="btn-success" onclick="login()">🔓 Login</button>
                 <button class="btn-danger" onclick="logout()">🚪 Logout</button>
                 <button class="btn-secondary" onclick="clearCookies()">🧹 Clear Cookies</button>
@@ -675,6 +679,7 @@
         async function login() {
             const username = document.getElementById('loginUsername').value.trim();
             const password = document.getElementById('loginPassword').value;
+            const rememberMe = document.getElementById('rememberMeCheckbox').checked;
             
             if (!username || !password) {
                 alert('Please enter both username and password');
@@ -688,7 +693,7 @@
             statusDiv.innerHTML = '⏳ Logging in...';
             addLog(`🔐 Attempting login as @${username}...`);
             
-            const result = await apiCall('/api/login', 'POST', { username, password });
+            const result = await apiCall('/api/login', 'POST', { username, password, rememberMe });
             
             loading.classList.remove('active');
             if (result.error) {
@@ -697,9 +702,14 @@
                 addLog('❌ Login failed: ' + result.error);
             } else {
                 statusDiv.className = 'status-message success mt-2';
-                statusDiv.innerHTML = `✅ Logged in as @${username}`;
-                addLog(`✅ Successfully logged in as @${username}`);
+                statusDiv.innerHTML = `✅ Logged in as @${result.username || username}`;
+                addLog(`✅ Successfully logged in as @${result.username || username}`);
+                addLog(rememberMe ? '🔒 Session will last 7 days' : '⏰ Session will last 2 hours');
                 document.getElementById('loginPassword').value = '';
+                // Save username to localStorage for convenience
+                if (rememberMe) {
+                    localStorage.setItem('savedUsername', username);
+                }
                 checkStatus();
             }
         }
@@ -972,6 +982,13 @@
         window.onload = () => {
             checkStatus();
             updateInteractionFields();
+            
+            // Auto-fill username if saved
+            const savedUsername = localStorage.getItem('savedUsername');
+            if (savedUsername) {
+                document.getElementById('loginUsername').value = savedUsername;
+            }
+            
             addLog('🤖 Dashboard loaded - Marketing Team App');
             addLog('💡 Ready to generate leads!');
         };
