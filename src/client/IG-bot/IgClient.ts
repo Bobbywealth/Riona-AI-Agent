@@ -277,6 +277,9 @@ export class IgClient {
             await this.loginWithCredentials();
         } else {
             logger.info("Successfully logged in with cookies.");
+            // Capture screenshot after cookie login
+            console.log(`📸 Capturing post-cookie-login screenshot...`);
+            await this.captureGenericPageScreenshot(this.page, 'feed-screens', 'after-cookie-login');
         }
     }
 
@@ -299,6 +302,10 @@ export class IgClient {
         await saveCookies("./cookies/Instagramcookies.json", cookies);
         logger.info("Successfully logged in and saved cookies.");
         await this.handleNotificationPopup();
+        
+        // Capture screenshot after login
+        console.log(`📸 Capturing post-login screenshot...`);
+        await this.captureGenericPageScreenshot(this.page, 'feed-screens', 'after-login');
     }
 
     async handleNotificationPopup(): Promise<boolean> {
@@ -822,6 +829,11 @@ Generate a friendly, helpful reply that:
             // Already on home page from login, just wait a bit
             await delay(3000);
             await this.handleNotificationPopup();
+            
+            // Capture screenshot of feed
+            console.log(`📸 Capturing feed screenshot...`);
+            await this.captureGenericPageScreenshot(page, 'feed-screens', 'home-feed-loaded');
+            
             console.log(`Ready to interact with feed posts...`);
             await this.showOverlayMessage('Interacting with your home feed…', 'info');
             // Don't click on any post, just scroll through feed
@@ -832,6 +844,10 @@ Generate a friendly, helpful reply that:
             });
             await delay(3000);
             await this.handleNotificationPopup();
+            
+            // Capture screenshot of explore page
+            console.log(`📸 Capturing explore page screenshot...`);
+            await this.captureGenericPageScreenshot(page, 'feed-screens', 'explore-page-loaded');
             
             // Click on the first post from explore
             console.log(`Opening first post from Explore...`);
@@ -1007,6 +1023,14 @@ Generate a friendly, helpful reply that:
                     console.log("No more posts found. Ending iteration...");
                     return;
                 }
+                
+                // Capture screenshot of found post (every 3rd post to avoid too many screenshots)
+                if (postIndex % 3 === 1) {
+                    console.log(`📸 Capturing post ${postIndex} screenshot...`);
+                    const auditLabel = `${resolvedOptions.mode || 'feed'}-post-${postIndex}-found`;
+                    await this.capturePostScreenshot(postSelector, auditLabel);
+                }
+                
                 // Add random mouse movement before liking
                 await page.mouse.move(Math.random() * 200 + 100, Math.random() * 200 + 100);
                 await delay(Math.random() * 500 + 200);
