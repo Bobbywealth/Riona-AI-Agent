@@ -803,8 +803,24 @@
             }
         }
 
-        function viewLogs() {
-            addLog('📋 Viewing recent activity...');
+        async function viewLogs() {
+            const loading = document.getElementById('loading4');
+            loading.classList.add('active');
+            addLog('📋 Fetching recent logs...');
+            
+            const result = await apiCall('/api/logs/recent?lines=60');
+            loading.classList.remove('active');
+            
+            if (result.error) {
+                addLog('❌ Error: ' + result.error);
+                return;
+            }
+            
+            const logs = document.getElementById('logs');
+            const lines = Array.isArray(result.lines) ? result.lines : [];
+            logs.textContent = lines.length ? lines.join('\n') : 'No log entries available.';
+            logs.scrollTop = logs.scrollHeight;
+            addLog('✅ Logs updated');
         }
 
         // Auto-refresh status every 30 seconds

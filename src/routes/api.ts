@@ -17,6 +17,16 @@ const cookieSameSite: 'lax' | 'strict' | 'none' =
     ? (rawSameSite as 'lax' | 'strict' | 'none')
     : 'lax';
 const cookieSecure = process.env.COOKIE_SECURE === 'true';
+const logsDirectory = path.join(__dirname, '../../logs');
+
+async function fileExists(filePath: string): Promise<boolean> {
+  try {
+    await fs.access(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 // JWT Auth middleware
 function requireAuth(req: Request, res: Response, next: Function) {
@@ -104,6 +114,31 @@ router.delete('/clear-cookies', async (req, res) => {
 
 // All routes below require authentication
 router.use(requireAuth);
+
+router.get('/logs/recent', async (req: Request, res: Response) => {
+  try {
+    const limit =
+      typeof req.query.lines === 'string' && !Number.isNaN(parseInt(req.query.lines, 10))
+        ? Math.min(200, Math.max(10, parseInt(req.query.lines, 10)))
+        : 50;
+
+    const now = new Date();
+    const dateSlug = now.toISOString().split('T')[0];
+    const logPath = path.join(logsDirectory, `${dateSlug}-combined.log`);
+
+    if (!(await fileExists(logPath))) {
+      return res.json({ lines: ['No log entries recorded for today yet.'] });
+    }
+
+    const raw = await fs.readFile(logPath, 'utf-8');
+    const cleaned = raw.trim().split(/\r?\n/).filter(Boolean);
+    const lines = cleaned.slice(-limit);
+    return res.json({ lines });
+  } catch (error) {
+    logger.error('Recent logs fetch error:', error);
+    return res.status(500).json({ error: 'Failed to load recent logs' });
+  }
+});
 
 // Interact with posts endpoint
 router.post('/interact', async (req: Request, res: Response) => {
