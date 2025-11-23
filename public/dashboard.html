@@ -421,27 +421,36 @@
                     <div class="card-icon">🔐</div>
                     <h2>Account</h2>
                 </div>
-                <div class="form-group">
-                    <label>Instagram Username</label>
-                    <input type="text" id="loginUsername" placeholder="your_username">
+                
+                <!-- Login Form (shown when logged out) -->
+                <div id="loginForm">
+                    <div class="form-group">
+                        <label>Instagram Username</label>
+                        <input type="text" id="loginUsername" placeholder="your_username">
+                    </div>
+                    <div class="form-group">
+                        <label>Instagram Password</label>
+                        <input type="password" id="loginPassword" placeholder="••••••••">
+                    </div>
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="rememberMeCheckbox" checked>
+                        <label style="margin: 0;">Remember me for 7 days</label>
+                    </div>
+                    <button class="btn-success" onclick="login()">🔓 Login</button>
                 </div>
-                <div class="form-group">
-                    <label>Instagram Password</label>
-                    <input type="password" id="loginPassword" placeholder="••••••••">
+                
+                <!-- Logged In Controls (shown when logged in) -->
+                <div id="loggedInControls" class="hidden">
+                    <button class="btn-danger" onclick="logout()">🚪 Logout</button>
+                    <button class="btn-secondary" onclick="clearCookies()">🧹 Clear Cookies</button>
                 </div>
-                <div class="checkbox-group">
-                    <input type="checkbox" id="rememberMeCheckbox" checked>
-                    <label style="margin: 0;">Remember me for 7 days</label>
-                </div>
-                <button class="btn-success" onclick="login()">🔓 Login</button>
-                <button class="btn-danger" onclick="logout()">🚪 Logout</button>
-                <button class="btn-secondary" onclick="clearCookies()">🧹 Clear Cookies</button>
+                
                 <div class="loading" id="loadingLogin">
                     <div class="spinner"></div>
                     <span>Processing...</span>
                 </div>
                 <div id="loginStatus" class="status-message info mt-2">
-                    ℹ️ Not logged in
+                    ℹ️ Checking status...
                 </div>
             </div>
             
@@ -744,19 +753,32 @@
             const result = await apiCall('/api/status');
             
             const badge = document.getElementById('statusBadge');
+            const loginForm = document.getElementById('loginForm');
+            const loggedInControls = document.getElementById('loggedInControls');
+            const loginStatus = document.getElementById('loginStatus');
+            
             if (result.authenticated) {
+                // Update badge
                 badge.className = 'status-badge online';
                 badge.innerHTML = '<div class="pulse"></div><span>Online</span>';
-            } else {
-                badge.className = 'status-badge offline';
-                badge.innerHTML = '<div class="pulse"></div><span>Offline</span>';
-            }
-            
-            const loginStatus = document.getElementById('loginStatus');
-            if (result.authenticated) {
+                
+                // Hide login form, show logout controls
+                loginForm.classList.add('hidden');
+                loggedInControls.classList.remove('hidden');
+                
+                // Update status message
                 loginStatus.className = 'status-message success mt-2';
                 loginStatus.innerHTML = `✅ Logged in${result.username ? ' as @' + result.username : ''}`;
             } else {
+                // Update badge
+                badge.className = 'status-badge offline';
+                badge.innerHTML = '<div class="pulse"></div><span>Offline</span>';
+                
+                // Show login form, hide logout controls
+                loginForm.classList.remove('hidden');
+                loggedInControls.classList.add('hidden');
+                
+                // Update status message
                 loginStatus.className = 'status-message error mt-2';
                 loginStatus.innerHTML = '❌ Not logged in';
             }
