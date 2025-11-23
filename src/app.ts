@@ -48,9 +48,6 @@ app.use(session({
   cookie: { maxAge: 2 * 60 * 60 * 1000, sameSite: 'lax' },
 }));
 
-// Serve static files from the 'public' directory
-app.use(express.static('frontend/dist'));
-
 // API Routes
 app.use('/api', apiRoutes);
 
@@ -59,8 +56,9 @@ app.get('/api/scheduler/status', (_req, res) => {
     res.json(getSchedulerStatus());
 });
 
+// Serve dashboard for all other routes
 app.get('*', (_req, res) => {
-    res.sendFile('index.html', { root: 'frontend/dist' });
+    res.sendFile('dashboard.html', { root: 'public' });
 });
 
 // Start the scheduler
