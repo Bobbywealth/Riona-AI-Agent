@@ -637,6 +637,7 @@
                     <h2>Tools</h2>
                 </div>
                 <button class="btn-info" onclick="viewLogs()">📋 View Recent Logs</button>
+                <button id="liveLogBtn" class="btn-success" onclick="toggleLiveLog()">▶️ Start Live Log</button>
                 <button class="btn-info" onclick="checkScheduler()">⏰ Scheduler Status</button>
                 <button class="btn-success" onclick="getMyProfile()">👤 My Profile Info</button>
                 <div class="collapsible mt-2" onclick="toggleCollapsible('scraperSection')">
@@ -1039,21 +1040,68 @@
             }
         }
 
+        let logRefreshInterval = null;
+        
         async function viewLogs() {
-            addLog('📋 Fetching recent logs...');
-            
-            const result = await apiCall('/api/logs/recent');
+            const result = await apiCall('/api/logs/recent?lines=100');
             
             if (result.error) {
-                addLog('❌ Error: ' + result.error);
+                console.error('Error fetching logs:', result.error);
                 return;
             }
             
             const logs = document.getElementById('logs');
             const lines = result.logs || [];
-            logs.textContent = lines.length ? lines.join('\n') : 'No log entries available.';
-            logs.scrollTop = logs.scrollHeight;
-            addLog('✅ Logs updated');
+            
+            // Clear existing logs and add new ones
+            logs.innerHTML = '';
+            if (lines.length === 0) {
+                const entry = document.createElement('div');
+                entry.className = 'log-entry';
+                entry.textContent = 'No log entries available.';
+                logs.appendChild(entry);
+            } else {
+                // Show newest first (reverse the array)
+                lines.reverse().forEach(line => {
+                    const entry = document.createElement('div');
+                    entry.className = 'log-entry';
+                    
+                    // Color code based on content
+                    if (line.includes('✅') || line.includes('Successfully')) {
+                        entry.classList.add('log-success');
+                    } else if (line.includes('❌') || line.includes('error:')) {
+                        entry.classList.add('log-error');
+                    } else if (line.includes('⚠️') || line.includes('warn:')) {
+                        entry.classList.add('log-warning');
+                    } else if (line.includes('info:') || line.includes('📡')) {
+                        entry.classList.add('log-info');
+                    }
+                    
+                    entry.textContent = line;
+                    logs.appendChild(entry);
+                });
+            }
+        }
+        
+        function toggleLiveLog() {
+            const btn = document.getElementById('liveLogBtn');
+            if (logRefreshInterval) {
+                // Stop live refresh
+                clearInterval(logRefreshInterval);
+                logRefreshInterval = null;
+                btn.textContent = '▶️ Start Live Log';
+                btn.classList.remove('btn-danger');
+                btn.classList.add('btn-success');
+                addLog('⏸️ Live log stopped');
+            } else {
+                // Start live refresh
+                viewLogs(); // Fetch immediately
+                logRefreshInterval = setInterval(viewLogs, 3000); // Refresh every 3 seconds
+                btn.textContent = '⏸️ Stop Live Log';
+                btn.classList.remove('btn-success');
+                btn.classList.add('btn-danger');
+                addLog('▶️ Live log started (updates every 3s)');
+            }
         }
 
         // Auto-refresh status every 30 seconds
