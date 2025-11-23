@@ -26,6 +26,10 @@ const app: Application = express();
 connectDB();
 
 // Middleware setup
+app.use(cors({
+    origin: true,
+    credentials: true,
+}));
 app.use(helmet({
     contentSecurityPolicy: {
         directives: {
@@ -34,7 +38,6 @@ app.use(helmet({
         },
     },
 }));
-app.use(cors());
 app.use(express.json()); // JSON body parsing
 app.use(express.urlencoded({ extended: true, limit: "1kb" })); // URL-encoded data
 app.use(cookieParser()); // Cookie parsing
