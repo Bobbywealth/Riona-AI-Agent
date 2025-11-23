@@ -662,7 +662,7 @@
             </div>
         </div>
         
-        <!-- Logs Section -->
+        <!-- Logs and Screenshots Section -->
         <div class="grid grid-2">
             <div class="card">
                 <div class="card-header">
@@ -671,6 +671,17 @@
                 </div>
                 <div class="log-container" id="logs">
                     <!-- Logs will appear here with newest at top -->
+                </div>
+            </div>
+            
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-icon">📸</div>
+                    <h2>Screenshot Viewer</h2>
+                </div>
+                <button class="btn-primary" onclick="loadScreenshots()">🔄 Refresh Screenshots</button>
+                <div id="screenshotGallery" style="margin-top: 15px; max-height: 400px; overflow-y: auto;">
+                    <p style="text-align: center; color: #6b7280;">Click refresh to load recent screenshots</p>
                 </div>
             </div>
         </div>
@@ -1041,6 +1052,57 @@
         }
 
         let logRefreshInterval = null;
+        
+        async function loadScreenshots() {
+            const gallery = document.getElementById('screenshotGallery');
+            gallery.innerHTML = '<p style="text-align: center; color: #667eea;">Loading screenshots...</p>';
+            
+            const result = await apiCall('/api/screenshots/list');
+            
+            if (result.error || !result.screenshots) {
+                gallery.innerHTML = '<p style="text-align: center; color: #ef4444;">Error loading screenshots</p>';
+                return;
+            }
+            
+            if (result.screenshots.length === 0) {
+                gallery.innerHTML = '<p style="text-align: center; color: #6b7280;">No screenshots found</p>';
+                return;
+            }
+            
+            gallery.innerHTML = '';
+            result.screenshots.forEach(screenshot => {
+                const item = document.createElement('div');
+                item.style.cssText = 'margin-bottom: 15px; padding: 10px; background: #f9fafb; border-radius: 8px; cursor: pointer;';
+                item.onclick = () => viewScreenshot(screenshot.type, screenshot.path);
+                
+                const typeEmoji = screenshot.type === 'post' ? '📄' : 
+                                 screenshot.type === 'profile' ? '👤' :
+                                 screenshot.type === 'dm' ? '💬' : '📰';
+                
+                const date = new Date(screenshot.timestamp).toLocaleString();
+                
+                item.innerHTML = `
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <span style="font-size: 24px;">${typeEmoji}</span>
+                        <div style="flex: 1;">
+                            <div style="font-weight: 600; color: #1f2937;">${screenshot.type.toUpperCase()}</div>
+                            <div style="font-size: 12px; color: #6b7280;">${date}</div>
+                            <div style="font-size: 11px; color: #9ca3af;">${screenshot.name}</div>
+                        </div>
+                        <span style="color: #667eea;">👁️</span>
+                    </div>
+                `;
+                
+                gallery.appendChild(item);
+            });
+            
+            addLog(`✅ Loaded ${result.screenshots.length} screenshots`);
+        }
+        
+        function viewScreenshot(type, filename) {
+            const url = `${API_URL}/api/screenshots/view/${type}/${filename}`;
+            window.open(url, '_blank', 'width=800,height=600');
+        }
         
         async function viewLogs() {
             const result = await apiCall('/api/logs/recent?lines=100');

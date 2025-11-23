@@ -142,6 +142,91 @@ router.get('/logs/recent', async (req: Request, res: Response) => {
   }
 });
 
+// Get recent screenshots
+router.get('/screenshots/list', async (req: Request, res: Response) => {
+  try {
+    const screenshotDirs = [
+      path.join(__dirname, '../../logs/post-screens'),
+      path.join(__dirname, '../../logs/profile-screens'),
+      path.join(__dirname, '../../logs/dm-outreach'),
+      path.join(__dirname, '../../logs/feed-screens'),
+    ];
+
+    const screenshots: Array<{ path: string; name: string; timestamp: number; type: string }> = [];
+
+    for (const dir of screenshotDirs) {
+      if (await fileExists(dir)) {
+        const files = await fs.readdir(dir);
+        const type = dir.includes('post-screens') ? 'post' : 
+                     dir.includes('profile-screens') ? 'profile' :
+                     dir.includes('dm-outreach') ? 'dm' : 'feed';
+        
+        for (const file of files) {
+          if (file.endsWith('.png') || file.endsWith('.jpg')) {
+            const filePath = path.join(dir, file);
+            const stats = await fs.stat(filePath);
+            screenshots.push({
+              path: file,
+              name: file,
+              timestamp: stats.mtimeMs,
+              type,
+            });
+          }
+        }
+      }
+    }
+
+    // Sort by timestamp, newest first
+    screenshots.sort((a, b) => b.timestamp - a.timestamp);
+
+    // Return only the 20 most recent
+    return res.json({ screenshots: screenshots.slice(0, 20) });
+  } catch (error) {
+    logger.error('Screenshot list error:', error);
+    return res.status(500).json({ error: 'Failed to list screenshots' });
+  }
+});
+
+// Serve a specific screenshot
+router.get('/screenshots/view/:type/:filename', async (req: Request, res: Response) => {
+  try {
+    const { type, filename } = req.params;
+    
+    // Validate type
+    const validTypes = ['post', 'profile', 'dm', 'feed'];
+    if (!validTypes.includes(type)) {
+      return res.status(400).json({ error: 'Invalid screenshot type' });
+    }
+
+    // Map type to directory
+    const dirMap: Record<string, string> = {
+      post: 'post-screens',
+      profile: 'profile-screens',
+      dm: 'dm-outreach',
+      feed: 'feed-screens',
+    };
+
+    const screenshotPath = path.join(__dirname, '../../logs', dirMap[type], filename);
+
+    // Security: Prevent path traversal
+    const normalizedPath = path.normalize(screenshotPath);
+    const baseDir = path.join(__dirname, '../../logs');
+    if (!normalizedPath.startsWith(baseDir)) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    if (!(await fileExists(screenshotPath))) {
+      return res.status(404).json({ error: 'Screenshot not found' });
+    }
+
+    // Send the image file
+    return res.sendFile(screenshotPath);
+  } catch (error) {
+    logger.error('Screenshot view error:', error);
+    return res.status(500).json({ error: 'Failed to load screenshot' });
+  }
+});
+
 // Interact with posts endpoint
 router.post('/interact', async (req: Request, res: Response) => {
   try {
