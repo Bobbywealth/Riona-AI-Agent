@@ -314,7 +314,7 @@
         /* Logs */
         .log-container {
             background: var(--dark);
-            color: #10b981;
+            color: #d1d5db;
             padding: 20px;
             border-radius: 10px;
             max-height: 400px;
@@ -322,6 +322,38 @@
             font-family: 'Monaco', 'Courier New', monospace;
             font-size: 13px;
             line-height: 1.6;
+        }
+        
+        .log-entry {
+            padding: 8px 12px;
+            margin-bottom: 4px;
+            border-radius: 6px;
+            background: rgba(255, 255, 255, 0.05);
+            border-left: 3px solid #6b7280;
+        }
+        
+        .log-entry.log-success {
+            color: #10b981;
+            border-left-color: #10b981;
+            background: rgba(16, 185, 129, 0.1);
+        }
+        
+        .log-entry.log-error {
+            color: #ef4444;
+            border-left-color: #ef4444;
+            background: rgba(239, 68, 68, 0.1);
+        }
+        
+        .log-entry.log-warning {
+            color: #f59e0b;
+            border-left-color: #f59e0b;
+            background: rgba(245, 158, 11, 0.1);
+        }
+        
+        .log-entry.log-info {
+            color: #3b82f6;
+            border-left-color: #3b82f6;
+            background: rgba(59, 130, 246, 0.1);
         }
         
         .log-container::-webkit-scrollbar {
@@ -637,7 +669,7 @@
                     <h2>Activity Logs</h2>
                 </div>
                 <div class="log-container" id="logs">
-                    🤖 Dashboard loaded. Ready for action!
+                    <!-- Logs will appear here with newest at top -->
                 </div>
             </div>
         </div>
@@ -666,8 +698,35 @@
         function addLog(message) {
             const logs = document.getElementById('logs');
             const timestamp = new Date().toLocaleTimeString();
-            logs.innerHTML += `\n[${timestamp}] ${message}`;
-            logs.scrollTop = logs.scrollHeight;
+            
+            // Determine log type based on message content for color coding
+            let logClass = '';
+            if (message.includes('✅') || message.includes('Success')) {
+                logClass = 'log-success';
+            } else if (message.includes('❌') || message.includes('Error') || message.includes('Failed')) {
+                logClass = 'log-error';
+            } else if (message.includes('⚠️') || message.includes('Warning')) {
+                logClass = 'log-warning';
+            } else if (message.includes('🚀') || message.includes('Starting')) {
+                logClass = 'log-info';
+            }
+            
+            // Create log entry and prepend (newest at top)
+            const logEntry = document.createElement('div');
+            logEntry.className = `log-entry ${logClass}`;
+            logEntry.textContent = `[${timestamp}] ${message}`;
+            
+            // Insert at the beginning instead of appending
+            if (logs.firstChild) {
+                logs.insertBefore(logEntry, logs.firstChild);
+            } else {
+                logs.appendChild(logEntry);
+            }
+            
+            // Keep only last 100 log entries to prevent memory issues
+            while (logs.children.length > 100) {
+                logs.removeChild(logs.lastChild);
+            }
         }
 
         function toggleCollapsible(id) {
