@@ -429,6 +429,12 @@
         .flex { display: flex; }
         .gap-2 { gap: 10px; }
         .hidden { display: none; }
+        .card-divider {
+            width: 100%;
+            height: 1px;
+            background: var(--border);
+            margin: 20px 0;
+        }
     </style>
 </head>
 <body>
@@ -633,6 +639,30 @@
                         <input type="number" id="storyMaxWatch" value="9" min="3">
                     </div>
                 </div>
+                <div class="card-divider"></div>
+                <div class="checkbox-group">
+                    <input type="checkbox" id="storyAiReplyEnabled">
+                    <label style="margin: 0;">Enable AI story replies (Gemini-powered)</label>
+                </div>
+                <div id="storyAiOptions" class="hidden">
+                    <div class="form-group">
+                        <label>Max AI Replies per Session</label>
+                        <input type="number" id="storyAiMaxReplies" value="3" min="1" max="20">
+                    </div>
+                    <div class="form-group">
+                        <label>Reply Tone</label>
+                        <select id="storyAiTone">
+                            <option value="friendly">Friendly + warm</option>
+                            <option value="consultative">Consultative / advisor</option>
+                            <option value="hype">High-energy / hype</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Confidence Threshold (%)</label>
+                        <input type="number" id="storyAiConfidence" value="55" min="10" max="100">
+                        <small style="display:block;color:#6b7280;margin-top:4px;">Only reply when Gemini confidence exceeds this level.</small>
+                    </div>
+                </div>
                 <button class="btn-primary" onclick="watchStories()">👁️ Watch Stories</button>
                 <div class="loading" id="loadingStories">
                     <div class="spinner"></div>
@@ -795,6 +825,11 @@
             document.getElementById('hashtagGroup').classList.toggle('hidden', mode !== 'hashtag');
             document.getElementById('locationGroup').classList.toggle('hidden', mode !== 'location');
             document.getElementById('competitorGroup').classList.toggle('hidden', mode !== 'competitor_followers');
+        }
+
+        function toggleStoryAiOptions() {
+            const enabled = document.getElementById('storyAiReplyEnabled').checked;
+            document.getElementById('storyAiOptions').classList.toggle('hidden', !enabled);
         }
 
         async function login() {
@@ -1038,6 +1073,20 @@
             const emoji = document.getElementById('storyReactionEmoji').value.trim() || '🔥';
             const minWatch = parseFloat(document.getElementById('storyMinWatch').value) * 1000 || 5000;
             const maxWatch = parseFloat(document.getElementById('storyMaxWatch').value) * 1000 || 9000;
+            const aiEnabled = document.getElementById('storyAiReplyEnabled').checked;
+            const maxReplies = parseInt(document.getElementById('storyAiMaxReplies').value, 10);
+            const aiTone = document.getElementById('storyAiTone').value;
+            const aiConfidence = parseFloat(document.getElementById('storyAiConfidence').value);
+            
+            let aiReplyOptions = null;
+            if (aiEnabled) {
+                aiReplyOptions = {
+                    enabled: true,
+                    maxReplies: isNaN(maxReplies) ? undefined : maxReplies,
+                    tone: aiTone || 'friendly',
+                    minConfidence: isNaN(aiConfidence) ? undefined : aiConfidence / 100,
+                };
+            }
 
             const payload = {
                 storyCount: count,
@@ -1048,6 +1097,9 @@
                 minWatchTimeMs: minWatch,
                 maxWatchTimeMs: maxWatch,
             };
+            if (aiReplyOptions) {
+                payload.aiReply = aiReplyOptions;
+            }
 
             addLog(`👁️ Watching ${count} stories...`);
             const result = await apiCall('/api/stories/watch', 'POST', payload);
@@ -1283,8 +1335,10 @@
                 document.getElementById('loginUsername').value = savedUsername;
             }
             
-            // Add proxy checkbox listener
+            // Add toggle listeners
             document.getElementById('proxyEnabled').addEventListener('change', toggleProxyFields);
+            document.getElementById('storyAiReplyEnabled').addEventListener('change', toggleStoryAiOptions);
+            toggleStoryAiOptions();
             
             addLog('🤖 Dashboard loaded - Marketing Team App');
             addLog('💡 Ready to generate leads!');

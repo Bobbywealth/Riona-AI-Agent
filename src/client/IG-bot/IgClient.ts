@@ -13,7 +13,7 @@ import readline from "readline";
 import fs from "fs/promises";
 import path from "path";
 import { getShouldExitInteractions } from '../../api/agent';
-import { InteractionOptions, InteractionMode, EngagementMetrics, StoryOptions } from './types';
+import { InteractionOptions, InteractionMode, EngagementMetrics, StoryOptions, StoryAIReplyOptions } from './types';
 import CommentedPost from "../../models/CommentedPost";
 import LanguageDetect from 'languagedetect';
 import mongoose from 'mongoose';
@@ -38,6 +38,13 @@ type ProfileInspectionResult = {
     bio?: string;
     screenshotPath?: string;
     category?: 'restaurant' | 'foodie' | 'other';
+};
+
+type StoryReplyDecision = {
+    shouldReply: boolean;
+    replyText?: string;
+    confidence: number;
+    summary?: string;
 };
 
 export class IgClient {
@@ -1507,6 +1514,15 @@ IMPORTANT: Write in clear, proper English only. No typos, no gibberish, no rando
         const reactionEmoji = options.reactionEmoji && options.reactionEmoji.trim()
             ? options.reactionEmoji.trim()
             : '🔥';
+        const aiReplyOptions = options.aiReply?.enabled
+            ? {
+                ...options.aiReply,
+                maxReplies: Math.max(1, options.aiReply.maxReplies ?? 3),
+                minConfidence: Math.min(1, Math.max(0, options.aiReply.minConfidence ?? 0.55)),
+                tone: options.aiReply.tone || 'friendly',
+            }
+            : undefined;
+        let aiRepliesSent = 0;
 
         console.log(`🎞️ Starting story session (${storyCount} stories)`);
         await this.showOverlayMessage('Opening stories…', 'info');
@@ -1533,16 +1549,61 @@ IMPORTANT: Write in clear, proper English only. No typos, no gibberish, no rando
 
         for (let index = 1; index <= storyCount; index++) {
             await this.showOverlayMessage(`👀 Viewing story ${index}/${storyCount}`, 'info');
+            await delay(600);
+            let screenshotPath: string | null = null;
+            if (aiReplyOptions) {
+                screenshotPath = await this.captureStoryScreenshot(index, normalizedTarget || source);
+                if (screenshotPath) {
+                    console.log(`📸 Story ${index} screenshot saved to ${screenshotPath}`);
+                }
+            }
+
+            let repliedViaAI = false;
+            if (
+                aiReplyOptions &&
+                screenshotPath &&
+                aiRepliesSent < (aiReplyOptions.maxReplies ?? 3)
+            ) {
+                const decision = await this.analyzeStoryFrame(
+                    screenshotPath,
+                    aiReplyOptions,
+                    { index, targetUsername: normalizedTarget }
+                );
+                if (decision?.shouldReply && decision.replyText) {
+                    const sent = await this.replyToStoryWithText(decision.replyText);
+                    if (sent) {
+                        aiRepliesSent++;
+                        repliedViaAI = true;
+                        const confidencePct = (decision.confidence * 100).toFixed(0);
+                        await this.showOverlayMessage(
+                            `🤖 AI replied to story ${index} (${confidencePct}%)`,
+                            'success'
+                        );
+                        console.log(
+                            `🤖 AI replied to story ${index}: "${decision.replyText}" (${confidencePct}% confidence)`
+                        );
+                    } else {
+                        console.warn('⚠️ AI story reply failed to send.');
+                    }
+                } else if (decision) {
+                    console.log(
+                        `🤖 Skipping story ${index} (confidence ${(decision.confidence * 100).toFixed(
+                            0
+                        )}%)`
+                    );
+                }
+            }
+
             const watchTime = Math.floor(Math.random() * (maxWatchTimeMs - minWatchTimeMs)) + minWatchTimeMs;
             await this.humanLikePause(Math.max(1500, watchTime - 1500), watchTime + 500);
 
-            if (Math.random() < likeProbability) {
+            if (!repliedViaAI && Math.random() < likeProbability) {
                 const liked = await this.tryLikeCurrentStory();
                 if (liked) {
                     console.log(`❤️ Liked story ${index}`);
                     await this.showOverlayMessage(`❤️ Liked story ${index}`, 'success');
                 }
-            } else if (Math.random() < reactionProbability) {
+            } else if (!repliedViaAI && Math.random() < reactionProbability) {
                 const reacted = await this.tryReactToStory(reactionEmoji);
                 if (reacted) {
                     console.log(`💬 Reacted to story ${index} with ${reactionEmoji}`);
@@ -1866,8 +1927,11 @@ IMPORTANT: Write in clear, proper English only. No typos, no gibberish, no rando
         return false;
     }
 
-    private async tryReactToStory(emoji: string): Promise<boolean> {
+    private async replyToStoryWithText(message: string): Promise<boolean> {
         if (!this.page) return false;
+        const text = message?.trim();
+        if (!text) return false;
+
         const inputSelectors = [
             'textarea[placeholder^="Reply"]',
             'textarea[aria-label="Message"]',
@@ -1881,17 +1945,29 @@ IMPORTANT: Write in clear, proper English only. No typos, no gibberish, no rando
 
             try {
                 await input.click({ clickCount: 1 });
-                await delay(200);
-                await this.page.keyboard.type(emoji, { delay: 120 });
+                await delay(150);
+                await this.page.keyboard.down('Control');
+                await this.page.keyboard.press('KeyA');
+                await this.page.keyboard.up('Control');
+                await this.page.keyboard.press('Backspace');
+                await delay(150);
+                await this.page.keyboard.type(text, {
+                    delay: Math.floor(Math.random() * 45) + 35,
+                });
                 await delay(200);
                 await this.page.keyboard.press('Enter');
                 await delay(400);
                 return true;
-            } catch {
+            } catch (error) {
+                console.warn('Story reply typing failed:', error);
                 continue;
             }
         }
         return false;
+    }
+
+    private async tryReactToStory(emoji: string): Promise<boolean> {
+        return this.replyToStoryWithText(emoji);
     }
 
     private async goToNextStory(): Promise<boolean> {
@@ -1933,6 +2009,21 @@ IMPORTANT: Write in clear, proper English only. No typos, no gibberish, no rando
             .replace(/[^a-z0-9]+/g, '-')
             .replace(/^-+|-+$/g, '')
             .slice(0, 40) || 'conversation';
+    }
+
+    private async captureStoryScreenshot(index: number, context?: string | null): Promise<string | null> {
+        if (!this.page) return null;
+        try {
+            const screenshotDir = path.join(process.cwd(), 'logs', 'story-screens');
+            await fs.mkdir(screenshotDir, { recursive: true });
+            const filename = `${Date.now()}-story-${index}-${this.sanitizeFilename(context || 'feed')}.png`;
+            const filePath = path.join(screenshotDir, filename);
+            await this.page.screenshot({ path: filePath });
+            return filePath;
+        } catch (error) {
+            console.warn('Failed to capture story screenshot:', error);
+            return null;
+        }
     }
 
     private async captureConversationScreenshot(conversationTitle: string): Promise<string | null> {
@@ -1980,6 +2071,49 @@ IMPORTANT: Write in clear, proper English only. No typos, no gibberish, no rando
             return filePath;
         } catch (error) {
             console.warn('Failed to capture page screenshot:', error);
+            return null;
+        }
+    }
+
+    private async analyzeStoryFrame(
+        screenshotPath: string,
+        aiOptions: StoryAIReplyOptions,
+        meta: { index: number; targetUsername?: string | null }
+    ): Promise<StoryReplyDecision | null> {
+        try {
+            const buffer = await fs.readFile(screenshotPath);
+            const imageBase64 = buffer.toString('base64');
+            const tone = aiOptions.tone || 'friendly';
+            const audienceLabel = meta.targetUsername ? `@${meta.targetUsername}` : 'feed viewer';
+
+            const prompt = `You are Marketing Team App's Instagram Story assistant.
+Analyze the attached story frame (${audienceLabel}, frame #${meta.index}) and craft ONE short reply (<=220 characters).
+Goals:
+- Reference a visual detail from the frame so it feels personal
+- Tone: ${tone}. Sound like a sharp social media manager, not a chatbot
+- If it fits, remind them we help restaurants & hospitality brands with done-for-you marketing
+- Include light emoji if natural, avoid hashtags
+
+If the story is irrelevant or should be skipped, still output a short positive observation but make sure the viralRate you return is very low (<=25).`;
+
+            const schema = getInstagramCommentSchema();
+            const result = await runAgent(schema, prompt, undefined, imageBase64);
+            const top = Array.isArray(result) ? result[0] : undefined;
+            const replyText = (top?.comment || '').toString().trim();
+            const confidence =
+                typeof top?.viralRate === 'number'
+                    ? Math.min(1, Math.max(0, top.viralRate / 100))
+                    : 0.5;
+
+            return {
+                shouldReply:
+                    !!replyText && confidence >= (aiOptions.minConfidence ?? 0.55),
+                replyText,
+                confidence,
+                summary: `Story ${meta.index} (${audienceLabel})`,
+            };
+        } catch (error) {
+            console.warn('Gemini story analysis failed:', error);
             return null;
         }
     }

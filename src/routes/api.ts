@@ -6,7 +6,7 @@ import { signToken, verifyToken, getTokenFromRequest } from '../secret';
 import fs from 'fs/promises';
 import path from 'path';
 import dotenv from 'dotenv';
-import type { InteractionOptions } from '../client/IG-bot/types';
+import type { InteractionOptions, StoryOptions } from '../client/IG-bot/types';
 
 const router = express.Router();
 
@@ -432,7 +432,21 @@ router.post('/stories/watch', async (req: Request, res: Response) => {
       return Math.min(1, Math.max(0, normalized));
     };
 
-    const options = {
+  const sanitizeTone = (value: any): 'friendly' | 'consultative' | 'hype' | undefined => {
+    if (typeof value !== 'string') return undefined;
+    const normalized = value.trim().toLowerCase();
+    if (['friendly', 'consultative', 'hype'].includes(normalized)) {
+      return normalized as 'friendly' | 'consultative' | 'hype';
+    }
+    return undefined;
+  };
+
+  const clamp01 = (value: number | undefined): number | undefined => {
+    if (value === undefined || Number.isNaN(value)) return undefined;
+    return Math.min(1, Math.max(0, value));
+  };
+
+  const options: StoryOptions = {
       targetUsername:
         typeof req.body.targetUsername === 'string'
           ? req.body.targetUsername.trim()
@@ -445,7 +459,16 @@ router.post('/stories/watch', async (req: Request, res: Response) => {
       reactionEmoji:
         typeof req.body.reactionEmoji === 'string' && req.body.reactionEmoji.trim().length
           ? req.body.reactionEmoji.trim()
-          : undefined,
+        : undefined,
+    aiReply:
+      req.body.aiReply && req.body.aiReply.enabled
+        ? {
+            enabled: true,
+            maxReplies: sanitizeNumber(req.body.aiReply.maxReplies),
+            minConfidence: clamp01(sanitizeFloat(req.body.aiReply.minConfidence)),
+            tone: sanitizeTone(req.body.aiReply.tone),
+          }
+        : undefined,
     };
 
     await igClient.watchStories(options);

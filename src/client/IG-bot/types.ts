@@ -34,6 +34,13 @@ export interface InteractionOptions {
   requiredBioKeywords?: string[];
 }
 
+export interface StoryAIReplyOptions {
+  enabled?: boolean;
+  maxReplies?: number;
+  minConfidence?: number;
+  tone?: 'friendly' | 'consultative' | 'hype';
+}
+
 export interface StoryOptions {
   source?: 'feed' | 'user';
   targetUsername?: string;
@@ -43,6 +50,7 @@ export interface StoryOptions {
   likeProbability?: number;
   reactionProbability?: number;
   reactionEmoji?: string;
+  aiReply?: StoryAIReplyOptions;
 }
 
 export interface EngagementMetrics {
