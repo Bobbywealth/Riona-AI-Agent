@@ -1996,19 +1996,29 @@ IMPORTANT: Write in clear, proper English only. No typos, no gibberish, no rando
     private async replyToStoryWithText(message: string): Promise<boolean> {
         if (!this.page) return false;
         const text = message?.trim();
-        if (!text) return false;
+        if (!text) {
+            console.warn('⚠️ Story reply: No message text provided');
+            return false;
+        }
+
+        console.log(`💬 Attempting to reply to story: "${text}"`);
 
         const inputSelectors = [
             'textarea[placeholder^="Reply"]',
+            'textarea[placeholder*="reply"]',
             'textarea[aria-label="Message"]',
+            'textarea[aria-label*="Add a reply"]',
             'input[placeholder^="Reply"]',
+            'input[placeholder*="reply"]',
             'div[contenteditable="true"][role="textbox"]',
+            'textarea[placeholder*="Send message"]',
         ];
 
         for (const selector of inputSelectors) {
             const input = await this.page.$(selector);
             if (!input) continue;
 
+            console.log(`✅ Found story reply input with selector: ${selector}`);
             try {
                 await input.click({ clickCount: 1 });
                 await delay(150);
@@ -2023,12 +2033,15 @@ IMPORTANT: Write in clear, proper English only. No typos, no gibberish, no rando
                 await delay(200);
                 await this.page.keyboard.press('Enter');
                 await delay(400);
+                console.log(`✅ Story reply sent successfully`);
                 return true;
             } catch (error) {
-                console.warn('Story reply typing failed:', error);
+                console.warn(`⚠️ Story reply typing failed with selector ${selector}:`, error);
                 continue;
             }
         }
+        
+        console.error('❌ No story reply input field found. Tried all selectors.');
         return false;
     }
 
@@ -2171,9 +2184,16 @@ If the story is irrelevant or should be skipped, still output a short positive o
                     ? Math.min(1, Math.max(0, top.viralRate / 100))
                     : 0.5;
 
+            const minConf = aiOptions.minConfidence ?? 0.55;
+            const shouldReply = !!replyText && confidence >= minConf;
+            
+            console.log(`🤖 AI Story Analysis: confidence=${(confidence * 100).toFixed(0)}%, minRequired=${(minConf * 100).toFixed(0)}%, shouldReply=${shouldReply}`);
+            if (replyText) {
+                console.log(`🤖 AI Generated Reply: "${replyText}"`);
+            }
+
             return {
-                shouldReply:
-                    !!replyText && confidence >= (aiOptions.minConfidence ?? 0.55),
+                shouldReply,
                 replyText,
                 confidence,
                 summary: `Story ${meta.index} (${audienceLabel})`,
