@@ -282,17 +282,26 @@ function requireAuth(req: Request, res: Response, next: Function) {
 }
 
 // Status endpoint
-router.get('/status', (req: Request, res: Response) => {
+router.get('/status', async (req: Request, res: Response) => {
   const dbConnected = mongoose.connection.readyState === 1;
   const token = getTokenFromRequest(req);
   let authenticated = false;
   let username: string | null = null;
+  let sessionStatus = null;
 
   if (token) {
     const payload = verifyToken(token);
     if (payload && typeof payload === 'object' && 'username' in payload) {
       authenticated = true;
       username = (payload as { username: string }).username;
+      
+      // Get session status if authenticated
+      try {
+        const igClient = await getIgClient();
+        sessionStatus = igClient.getSessionStatus();
+      } catch (error) {
+        logger.debug('Could not get session status:', error);
+      }
     }
   }
 
@@ -301,7 +310,48 @@ router.get('/status', (req: Request, res: Response) => {
     dbConnected,
     authenticated,
     username,
+    session: sessionStatus,
   });
+});
+
+// Session refresh endpoint
+router.post('/session/refresh', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const igClient = await getIgClient((req as any).user.username);
+    const success = await igClient.refreshSession();
+    
+    if (success) {
+      const sessionStatus = igClient.getSessionStatus();
+      return res.json({ 
+        success: true, 
+        message: 'Session refreshed successfully',
+        session: sessionStatus
+      });
+    } else {
+      return res.status(500).json({ 
+        error: 'Failed to refresh session. You may need to log in again.' 
+      });
+    }
+  } catch (error) {
+    logger.error('Session refresh error:', error);
+    return res.status(500).json({ error: 'Failed to refresh session' });
+  }
+});
+
+// Get session status
+router.get('/session/status', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const igClient = await getIgClient((req as any).user.username);
+    const sessionStatus = igClient.getSessionStatus();
+    
+    return res.json({ 
+      success: true,
+      session: sessionStatus
+    });
+  } catch (error) {
+    logger.error('Get session status error:', error);
+    return res.status(500).json({ error: 'Failed to get session status' });
+  }
 });
 
 // Login endpoint

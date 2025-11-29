@@ -102,6 +102,8 @@ export class IgClient {
     private contactedUsers = new Set<string>();
     private repliedConversations = new Set<string>();
     private repliedConversationsPath = './data/replied-conversations.json';
+    private sessionRefreshInterval: NodeJS.Timeout | null = null;
+    private lastSessionRefresh: Date | null = null;
 
     constructor(username?: string, password?: string) {
         this.username = username || '';
@@ -334,6 +336,9 @@ export class IgClient {
         } else {
             await this.loginWithCredentials();
         }
+
+        // Start auto-session refresh
+        this.startSessionRefresh();
     }
 
     private async loginWithCookies() {
@@ -2765,7 +2770,99 @@ Return only the DM text.`;
         }
     }
 
+    /**
+     * Start automatic session refresh to keep Instagram login alive
+     * Refreshes every 12 hours by navigating to feed and saving cookies
+     */
+    private startSessionRefresh() {
+        // Clear any existing interval
+        if (this.sessionRefreshInterval) {
+            clearInterval(this.sessionRefreshInterval);
+        }
+
+        // Refresh session every 12 hours (43200000 ms)
+        const REFRESH_INTERVAL = 12 * 60 * 60 * 1000;
+        
+        this.sessionRefreshInterval = setInterval(async () => {
+            try {
+                await this.refreshSession();
+            } catch (error) {
+                logger.error('❌ Auto session refresh failed:', error);
+            }
+        }, REFRESH_INTERVAL);
+
+        logger.info('🔄 Auto session refresh enabled (every 12 hours)');
+    }
+
+    /**
+     * Manually refresh the Instagram session
+     * Navigates to feed and saves fresh cookies
+     */
+    public async refreshSession(): Promise<boolean> {
+        if (!this.page) {
+            logger.warn('⚠️ Cannot refresh session: page not initialized');
+            return false;
+        }
+
+        try {
+            logger.info('🔄 Refreshing Instagram session...');
+            
+            // Navigate to home feed to trigger session refresh
+            await this.page.goto('https://www.instagram.com/', {
+                waitUntil: 'networkidle2',
+                timeout: 60000
+            });
+            
+            await delay(3000);
+
+            // Check if still logged in
+            const isLoggedIn = await this.page.evaluate(() => {
+                // Check for common logged-in indicators
+                return !document.querySelector('input[name="username"]') && 
+                       (document.querySelector('svg[aria-label="Home"]') !== null ||
+                        document.querySelector('a[href="/"]') !== null);
+            });
+
+            if (!isLoggedIn) {
+                logger.error('❌ Session refresh failed: not logged in');
+                return false;
+            }
+
+            // Save fresh cookies
+            const cookies = await this.page.cookies();
+            await saveCookies('./cookies/Instagramcookies.json', cookies);
+            
+            this.lastSessionRefresh = new Date();
+            logger.info(`✅ Session refreshed successfully at ${this.lastSessionRefresh.toLocaleString()}`);
+            
+            return true;
+        } catch (error) {
+            logger.error('❌ Session refresh error:', error);
+            return false;
+        }
+    }
+
+    /**
+     * Get session status information
+     */
+    public getSessionStatus() {
+        return {
+            lastRefresh: this.lastSessionRefresh,
+            autoRefreshEnabled: this.sessionRefreshInterval !== null,
+            nextRefresh: this.lastSessionRefresh 
+                ? new Date(this.lastSessionRefresh.getTime() + 12 * 60 * 60 * 1000)
+                : null
+        };
+    }
+
     public async close() {
+        // Stop session refresh interval
+        if (this.sessionRefreshInterval) {
+            clearInterval(this.sessionRefreshInterval);
+            this.sessionRefreshInterval = null;
+            logger.info('🛑 Auto session refresh stopped');
+        }
+
         if (this.browser) {
             await this.browser.close();
             this.browser = null;
