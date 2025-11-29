@@ -821,6 +821,13 @@
                     <div class="card-icon">📜</div>
                     <h2>Activity Logs <span id="logCount" style="font-size: 14px; color: #667eea; font-weight: normal;"></span></h2>
                 </div>
+                <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+                    <button class="btn-primary" id="liveLogBtn" onclick="toggleLiveLog()">▶️ Start Live Log</button>
+                    <select id="logDetailLevel" onchange="viewLogs()" style="padding: 8px; border-radius: 8px; border: 1px solid #e5e7eb;">
+                        <option value="all">All Logs (Detailed)</option>
+                        <option value="important">Important Only</option>
+                    </select>
+                </div>
                 <div class="log-container" id="logs">
                     <!-- Logs will appear here with newest at top -->
                 </div>
@@ -1425,7 +1432,7 @@
         }
         
         async function viewLogs() {
-            const result = await apiCall('/api/logs/recent?lines=500');
+            const result = await apiCall('/api/logs/recent?lines=1000'); // Increased from 500 to 1000
             
             if (result.error) {
                 console.error('Error fetching logs:', result.error);
@@ -1433,7 +1440,21 @@
             }
             
             const logs = document.getElementById('logs');
-            const lines = result.logs || [];
+            let lines = result.logs || [];
+            
+            // Filter based on detail level
+            const detailLevel = document.getElementById('logDetailLevel')?.value || 'all';
+            if (detailLevel === 'important') {
+                // Only show important logs (errors, successes, major actions)
+                lines = lines.filter(line => {
+                    return line.includes('✅') || line.includes('❌') || line.includes('⚠️') ||
+                           line.includes('error:') || line.includes('Successfully') ||
+                           line.includes('Starting') || line.includes('Complete') ||
+                           line.includes('Liked story') || line.includes('AI replied') ||
+                           line.includes('Reply sent') || line.includes('Campaign') ||
+                           line.includes('logged in') || line.includes('Failed');
+                });
+            }
             
             // Clear existing logs and add new ones
             logs.innerHTML = '';
@@ -1448,15 +1469,31 @@
                     const entry = document.createElement('div');
                     entry.className = 'log-entry';
                     
-                    // Color code based on content
-                    if (line.includes('✅') || line.includes('Successfully') || line.includes('liked') || line.includes('Comment posted')) {
+                    // Enhanced color coding to match terminal output
+                    if (line.includes('✅') || line.includes('Successfully') || line.includes('liked') || line.includes('Comment posted') || 
+                        line.includes('Liked story') || line.includes('❤️') || line.includes('Reply sent') || 
+                        line.includes('Story reply sent') || line.includes('AI replied')) {
                         entry.classList.add('log-success');
-                    } else if (line.includes('❌') || line.includes('error:') || line.includes('Error') || line.includes('failed')) {
+                    } else if (line.includes('❌') || line.includes('error:') || line.includes('Error') || 
+                               line.includes('failed') || line.includes('Failed') || line.includes('timeout')) {
                         entry.classList.add('log-error');
-                    } else if (line.includes('⚠️') || line.includes('warn:') || line.includes('Warning')) {
+                    } else if (line.includes('⚠️') || line.includes('warn:') || line.includes('Warning') || 
+                               line.includes('Skipping') || line.includes('No dismissal') || line.includes('Unable to')) {
                         entry.classList.add('log-warning');
-                    } else if (line.includes('info:') || line.includes('📡') || line.includes('📍') || line.includes('🔍') || line.includes('📸') || line.includes('📩')) {
+                    } else if (line.includes('info:') || line.includes('📡') || line.includes('📍') || 
+                               line.includes('🔍') || line.includes('📸') || line.includes('📩') || 
+                               line.includes('🎞️') || line.includes('Starting story') || line.includes('Watching') ||
+                               line.includes('Checking for') || line.includes('Notification') || 
+                               line.includes('screenshot saved') || line.includes('Saved screenshot') ||
+                               line.includes('Loaded cookies') || line.includes('logged in') ||
+                               line.includes('Navigating') || line.includes('Opening') ||
+                               line.includes('💬') || line.includes('Attempting to') || line.includes('Found story')) {
                         entry.classList.add('log-info');
+                    } else if (line.includes('🤖') || line.includes('AI Story Analysis') || 
+                               line.includes('AI Generated') || line.includes('confidence')) {
+                        entry.classList.add('log-info');
+                        entry.style.backgroundColor = '#f0f9ff'; // Light blue for AI logs
+                        entry.style.borderLeft = '3px solid #3b82f6';
                     }
                     
                     entry.textContent = line;
