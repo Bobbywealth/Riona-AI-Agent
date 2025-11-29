@@ -529,7 +529,7 @@
                     </div>
                     <div class="checkbox-group">
                         <input type="checkbox" id="rememberMeCheckbox" checked>
-                        <label style="margin: 0;">Remember me for 7 days</label>
+                        <label style="margin: 0;">Remember me for 30 days</label>
                     </div>
                     <button class="btn-success" onclick="login()">🔓 Login</button>
                 </div>
@@ -1018,7 +1018,7 @@
                 statusDiv.className = 'status-message success mt-2';
                 statusDiv.innerHTML = `✅ Logged in as @${result.username || username}`;
                 addLog(`✅ Successfully logged in as @${result.username || username}`);
-                addLog(rememberMe ? '🔒 Session will last 7 days' : '⏰ Session will last 2 hours');
+                addLog(rememberMe ? '🔒 Session will last 30 days' : '⏰ Session will last 24 hours');
                 document.getElementById('loginPassword').value = '';
                 // Save username to localStorage for convenience
                 if (rememberMe) {
@@ -1537,6 +1537,15 @@
         window.onload = () => {
             checkStatus();
             updateInteractionFields();
+            
+            // Auto-fill username if previously saved
+            const savedUsername = localStorage.getItem('savedUsername');
+            if (savedUsername) {
+                const usernameInput = document.getElementById('loginUsername');
+                if (usernameInput) {
+                    usernameInput.value = savedUsername;
+                }
+            }
             loadProxySettings();
             
             // Auto-fill username if saved

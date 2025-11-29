@@ -364,13 +364,14 @@ router.post('/login', async (req: Request, res: Response) => {
     const igClient = await getIgClient(username, password);
     // Sign JWT and set as httpOnly cookie
     const token = signToken({ username });
-    // Use 7 days if rememberMe is true, otherwise 2 hours
-    const maxAge = rememberMe ? 7 * 24 * 60 * 60 * 1000 : 2 * 60 * 60 * 1000;
+    // Use 30 days if rememberMe is true, otherwise 24 hours
+    const maxAge = rememberMe ? 30 * 24 * 60 * 60 * 1000 : 24 * 60 * 60 * 1000;
     res.cookie('token', token, {
       httpOnly: true,
       sameSite: cookieSameSite,
       maxAge,
       secure: cookieSecure,
+      path: '/', // Ensure cookie is available for all paths
     });
     return res.json({ message: 'Login successful', username });
   } catch (error) {
