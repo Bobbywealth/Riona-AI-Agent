@@ -100,10 +100,44 @@ export class IgClient {
     ];
     private marketingValueProp = `Marketing Team App is your remote digital marketing team. We deliver full-funnel strategy, daily content production, paid ads, AI automation, and a 30-day money-back guarantee with no long-term contracts. Packages start at $249/mo and average 310% ROI for 500+ clients.`;
     private contactedUsers = new Set<string>();
+    private repliedConversations = new Set<string>();
+    private repliedConversationsPath = './data/replied-conversations.json';
 
     constructor(username?: string, password?: string) {
         this.username = username || '';
         this.password = password || '';
+        this.loadRepliedConversations();
+    }
+    
+    private async loadRepliedConversations() {
+        try {
+            const data = await fs.readFile(this.repliedConversationsPath, 'utf-8');
+            const parsed = JSON.parse(data);
+            this.repliedConversations = new Set(parsed);
+            console.log(`📋 Loaded ${this.repliedConversations.size} replied conversations from cache`);
+        } catch (error) {
+            // File doesn't exist yet, start fresh
+            this.repliedConversations = new Set();
+        }
+    }
+    
+    private async saveRepliedConversations() {
+        try {
+            const dir = path.dirname(this.repliedConversationsPath);
+            await fs.mkdir(dir, { recursive: true });
+            await fs.writeFile(
+                this.repliedConversationsPath,
+                JSON.stringify(Array.from(this.repliedConversations), null, 2)
+            );
+        } catch (error) {
+            console.warn('Failed to save replied conversations:', error);
+        }
+    }
+    
+    async clearRepliedConversationsCache() {
+        this.repliedConversations.clear();
+        await this.saveRepliedConversations();
+        console.log('✅ Cleared replied conversations cache');
     }
 
     private async lookupLocationPath(
@@ -513,6 +547,7 @@ export class IgClient {
             // Navigate to DMs page
             await page.goto("https://www.instagram.com/direct/inbox/", {
                 waitUntil: "networkidle2",
+                timeout: 60000, // Increased timeout for slow DM inbox
             });
             await delay(5000); // Give more time for conversations to load
             
@@ -549,6 +584,7 @@ export class IgClient {
                     if (processed > 0) {
                         await page.goto("https://www.instagram.com/direct/inbox/", {
                             waitUntil: "networkidle2",
+                            timeout: 60000, // Increased timeout for slow DM inbox
                         });
                         await delay(3000);
                         await this.dismissAllPopups();
@@ -579,6 +615,14 @@ export class IgClient {
                         }
                         return 'conversation';
                     });
+                    
+                    // Check if we've already replied to this conversation
+                    const conversationId = conversationTitle.toLowerCase().replace(/\s+/g, '_');
+                    if (this.repliedConversations.has(conversationId)) {
+                        console.log(`⏭️ Skipped: already replied to "${conversationTitle}" in a previous session`);
+                        processed++;
+                        continue;
+                    }
                     
                     const fetchSnapshot = () =>
                         page.evaluate(() => {
@@ -652,8 +696,11 @@ export class IgClient {
                     }
                     
                     if (snapshot?.lastIsSelf) {
-                        console.log('Skipped: last message was sent by the bot.');
-                        index++;
+                        console.log('⏭️ Skipped: last message was sent by the bot.');
+                        // Mark as replied so we don't check again
+                        this.repliedConversations.add(conversationId);
+                        await this.saveRepliedConversations();
+                        processed++;
                         continue;
                     }
 
@@ -724,7 +771,11 @@ Generate a friendly, helpful reply that:
                             
                             await delay(1000);
                             await page.keyboard.press('Enter');
-                            console.log(`Reply sent successfully`);
+                            console.log(`✅ Reply sent successfully to "${conversationTitle}"`);
+                            
+                            // Mark this conversation as replied
+                            this.repliedConversations.add(conversationId);
+                            await this.saveRepliedConversations();
                             
                             // Wait before checking next conversation
                             await delay(Math.random() * 5000 + 3000);
@@ -736,6 +787,7 @@ Generate a friendly, helpful reply that:
                     processed++;
                 } catch (convError) {
                     console.error(`Error processing conversation ${offset + index + 1}:`, convError);
+                    processed++; // Count as processed even if it errored, to avoid infinite loop
                 }
                 }
                 
@@ -1497,130 +1549,143 @@ IMPORTANT: Write in clear, proper English only. No typos, no gibberish, no rando
     async watchStories(options: StoryOptions = {}) {
         if (!this.page) throw new Error("Page not initialized");
         const page = this.page;
-        const normalizedTarget = this.normalizeUsername(options.targetUsername);
-        const source = options.source || (normalizedTarget ? 'user' : 'feed');
-        const storyCount = Math.max(1, options.storyCount ?? 10);
+        
+        try {
+            const normalizedTarget = this.normalizeUsername(options.targetUsername);
+            const source = options.source || (normalizedTarget ? 'user' : 'feed');
+            const storyCount = Math.max(1, options.storyCount ?? 10);
 
-        let minWatchTimeMs = options.minWatchTimeMs ?? 5000;
-        let maxWatchTimeMs = options.maxWatchTimeMs ?? 9000;
-        if (maxWatchTimeMs < minWatchTimeMs) {
-            [minWatchTimeMs, maxWatchTimeMs] = [maxWatchTimeMs, minWatchTimeMs];
-        }
-        minWatchTimeMs = Math.max(2000, minWatchTimeMs);
-        maxWatchTimeMs = Math.max(minWatchTimeMs + 500, maxWatchTimeMs);
-
-        const likeProbability = Math.min(1, Math.max(0, options.likeProbability ?? 0.25));
-        const reactionProbability = Math.min(1, Math.max(0, options.reactionProbability ?? 0.2));
-        const reactionEmoji = options.reactionEmoji && options.reactionEmoji.trim()
-            ? options.reactionEmoji.trim()
-            : '🔥';
-        const aiReplyOptions = options.aiReply?.enabled
-            ? {
-                ...options.aiReply,
-                maxReplies: Math.max(1, options.aiReply.maxReplies ?? 3),
-                minConfidence: Math.min(1, Math.max(0, options.aiReply.minConfidence ?? 0.55)),
-                tone: options.aiReply.tone || 'friendly',
+            let minWatchTimeMs = options.minWatchTimeMs ?? 5000;
+            let maxWatchTimeMs = options.maxWatchTimeMs ?? 9000;
+            if (maxWatchTimeMs < minWatchTimeMs) {
+                [minWatchTimeMs, maxWatchTimeMs] = [maxWatchTimeMs, minWatchTimeMs];
             }
-            : undefined;
-        let aiRepliesSent = 0;
+            minWatchTimeMs = Math.max(2000, minWatchTimeMs);
+            maxWatchTimeMs = Math.max(minWatchTimeMs + 500, maxWatchTimeMs);
 
-        console.log(`🎞️ Starting story session (${storyCount} stories)`);
-        await this.showOverlayMessage('Opening stories…', 'info');
-
-        if (source === 'user' && normalizedTarget) {
-            await page.goto(`https://www.instagram.com/stories/${normalizedTarget}/`, {
-                waitUntil: "networkidle2",
-            });
-            await delay(3000);
-        } else {
-            await page.goto("https://www.instagram.com/", {
-                waitUntil: "networkidle2",
-            });
-            await delay(3000);
-        }
-        await this.handleNotificationPopup();
-
-        const viewerReady = await this.ensureStoryViewerOpen(normalizedTarget);
-        if (!viewerReady) {
-            console.log('⚠️ Unable to open story viewer. No stories available.');
-            await this.showOverlayMessage('No stories available right now', 'warning');
-            return;
-        }
-
-        for (let index = 1; index <= storyCount; index++) {
-            await this.showOverlayMessage(`👀 Viewing story ${index}/${storyCount}`, 'info');
-            await delay(600);
-            let screenshotPath: string | null = null;
-            if (aiReplyOptions) {
-                screenshotPath = await this.captureStoryScreenshot(index, normalizedTarget || source);
-                if (screenshotPath) {
-                    console.log(`📸 Story ${index} screenshot saved to ${screenshotPath}`);
+            const likeProbability = Math.min(1, Math.max(0, options.likeProbability ?? 0.25));
+            const reactionProbability = Math.min(1, Math.max(0, options.reactionProbability ?? 0.2));
+            const reactionEmoji = options.reactionEmoji && options.reactionEmoji.trim()
+                ? options.reactionEmoji.trim()
+                : '🔥';
+            const aiReplyOptions = options.aiReply?.enabled
+                ? {
+                    ...options.aiReply,
+                    maxReplies: Math.max(1, options.aiReply.maxReplies ?? 3),
+                    minConfidence: Math.min(1, Math.max(0, options.aiReply.minConfidence ?? 0.55)),
+                    tone: options.aiReply.tone || 'friendly',
                 }
+                : undefined;
+            let aiRepliesSent = 0;
+
+            console.log(`🎞️ Starting story session (${storyCount} stories)`);
+            await this.showOverlayMessage('Opening stories…', 'info');
+
+            if (source === 'user' && normalizedTarget) {
+                await page.goto(`https://www.instagram.com/stories/${normalizedTarget}/`, {
+                    waitUntil: "networkidle2",
+                    timeout: 60000,
+                });
+                await delay(3000);
+            } else {
+                await page.goto("https://www.instagram.com/", {
+                    waitUntil: "networkidle2",
+                    timeout: 60000,
+                });
+                await delay(3000);
+            }
+            await this.handleNotificationPopup();
+
+            const viewerReady = await this.ensureStoryViewerOpen(normalizedTarget);
+            if (!viewerReady) {
+                console.log('⚠️ Unable to open story viewer. No stories available.');
+                await this.showOverlayMessage('No stories available right now', 'warning');
+                return;
             }
 
-            let repliedViaAI = false;
-            if (
-                aiReplyOptions &&
-                screenshotPath &&
-                aiRepliesSent < (aiReplyOptions.maxReplies ?? 3)
-            ) {
-                const decision = await this.analyzeStoryFrame(
-                    screenshotPath,
-                    aiReplyOptions,
-                    { index, targetUsername: normalizedTarget }
-                );
-                if (decision?.shouldReply && decision.replyText) {
-                    const sent = await this.replyToStoryWithText(decision.replyText);
-                    if (sent) {
-                        aiRepliesSent++;
-                        repliedViaAI = true;
-                        const confidencePct = (decision.confidence * 100).toFixed(0);
-                        await this.showOverlayMessage(
-                            `🤖 AI replied to story ${index} (${confidencePct}%)`,
-                            'success'
-                        );
-                        console.log(
-                            `🤖 AI replied to story ${index}: "${decision.replyText}" (${confidencePct}% confidence)`
-                        );
-                    } else {
-                        console.warn('⚠️ AI story reply failed to send.');
+            for (let index = 1; index <= storyCount; index++) {
+                await this.showOverlayMessage(`👀 Viewing story ${index}/${storyCount}`, 'info');
+                await delay(600);
+                let screenshotPath: string | null = null;
+                if (aiReplyOptions) {
+                    screenshotPath = await this.captureStoryScreenshot(index, normalizedTarget || source);
+                    if (screenshotPath) {
+                        console.log(`📸 Story ${index} screenshot saved to ${screenshotPath}`);
                     }
-                } else if (decision) {
-                    console.log(
-                        `🤖 Skipping story ${index} (confidence ${(decision.confidence * 100).toFixed(
-                            0
-                        )}%)`
+                }
+
+                let repliedViaAI = false;
+                if (
+                    aiReplyOptions &&
+                    screenshotPath &&
+                    aiRepliesSent < (aiReplyOptions.maxReplies ?? 3)
+                ) {
+                    const decision = await this.analyzeStoryFrame(
+                        screenshotPath,
+                        aiReplyOptions,
+                        { index, targetUsername: normalizedTarget }
                     );
+                    if (decision?.shouldReply && decision.replyText) {
+                        const sent = await this.replyToStoryWithText(decision.replyText);
+                        if (sent) {
+                            aiRepliesSent++;
+                            repliedViaAI = true;
+                            const confidencePct = (decision.confidence * 100).toFixed(0);
+                            await this.showOverlayMessage(
+                                `🤖 AI replied to story ${index} (${confidencePct}%)`,
+                                'success'
+                            );
+                            console.log(
+                                `🤖 AI replied to story ${index}: "${decision.replyText}" (${confidencePct}% confidence)`
+                            );
+                        } else {
+                            console.warn('⚠️ AI story reply failed to send.');
+                        }
+                    } else if (decision) {
+                        console.log(
+                            `🤖 Skipping story ${index} (confidence ${(decision.confidence * 100).toFixed(
+                                0
+                            )}%)`
+                        );
+                    }
                 }
+
+                const watchTime = Math.floor(Math.random() * (maxWatchTimeMs - minWatchTimeMs)) + minWatchTimeMs;
+                await this.humanLikePause(Math.max(1500, watchTime - 1500), watchTime + 500);
+
+                if (!repliedViaAI && Math.random() < likeProbability) {
+                    const liked = await this.tryLikeCurrentStory();
+                    if (liked) {
+                        console.log(`❤️ Liked story ${index}`);
+                        await this.showOverlayMessage(`❤️ Liked story ${index}`, 'success');
+                    }
+                } else if (!repliedViaAI && Math.random() < reactionProbability) {
+                    const reacted = await this.tryReactToStory(reactionEmoji);
+                    if (reacted) {
+                        console.log(`💬 Reacted to story ${index} with ${reactionEmoji}`);
+                        await this.showOverlayMessage(`💬 Reacted with ${reactionEmoji}`, 'success');
+                    }
+                }
+
+                const advanced = await this.goToNextStory();
+                if (!advanced) {
+                    console.log('Reached the end of available stories.');
+                    break;
+                }
+                await delay(1200);
             }
 
-            const watchTime = Math.floor(Math.random() * (maxWatchTimeMs - minWatchTimeMs)) + minWatchTimeMs;
-            await this.humanLikePause(Math.max(1500, watchTime - 1500), watchTime + 500);
-
-            if (!repliedViaAI && Math.random() < likeProbability) {
-                const liked = await this.tryLikeCurrentStory();
-                if (liked) {
-                    console.log(`❤️ Liked story ${index}`);
-                    await this.showOverlayMessage(`❤️ Liked story ${index}`, 'success');
-                }
-            } else if (!repliedViaAI && Math.random() < reactionProbability) {
-                const reacted = await this.tryReactToStory(reactionEmoji);
-                if (reacted) {
-                    console.log(`💬 Reacted to story ${index} with ${reactionEmoji}`);
-                    await this.showOverlayMessage(`💬 Reacted with ${reactionEmoji}`, 'success');
-                }
-            }
-
-            const advanced = await this.goToNextStory();
-            if (!advanced) {
-                console.log('Reached the end of available stories.');
-                break;
-            }
-            await delay(1200);
+            await this.showOverlayMessage('Stories session complete ✅', 'success');
+            await page.keyboard.press('Escape').catch(() => undefined);
+        } catch (error: any) {
+            console.error('❌ Error during story session:', error.message);
+            await this.showOverlayMessage('Story session failed', 'error');
+            // Try to escape story viewer if we're stuck
+            try {
+                await page.keyboard.press('Escape');
+            } catch {}
+            throw error;
         }
-
-        await this.showOverlayMessage('Stories session complete ✅', 'success');
-        await page.keyboard.press('Escape').catch(() => undefined);
     }
 
     private inferModeFromTarget(target?: string): InteractionMode {
@@ -1855,6 +1920,7 @@ IMPORTANT: Write in clear, proper English only. No typos, no gibberish, no rando
         if (targetUsername) {
             await page.goto(`https://www.instagram.com/stories/${targetUsername}/`, {
                 waitUntil: "networkidle2",
+                timeout: 60000,
             });
             await delay(2500);
             await this.handleNotificationPopup();
@@ -2313,6 +2379,12 @@ Return only the DM text.`;
             console.log(`📨 Sent outreach DM to @${username}`);
             await this.captureGenericPageScreenshot(page, 'dm-outreach', `${username}-after`);
             this.contactedUsers.add(username);
+            
+            // Mark this conversation as already handled (we initiated it)
+            const conversationId = username.toLowerCase().replace(/\s+/g, '_');
+            this.repliedConversations.add(conversationId);
+            await this.saveRepliedConversations();
+            
             await this.humanLikePause(2500, 5000);
             return true;
         } catch (error) {

@@ -323,6 +323,63 @@
             font-size: 13px;
             line-height: 1.6;
         }
+
+        .ai-chat-log {
+            background: #0f172a;
+            color: #e5e7eb;
+            border-radius: 12px;
+            padding: 14px;
+            height: 260px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            border: 1px solid #1f2937;
+        }
+
+        .ai-chat-bubble {
+            padding: 10px 12px;
+            border-radius: 10px;
+            line-height: 1.4;
+            font-size: 0.95rem;
+            box-shadow: 0 6px 18px rgba(15, 23, 42, 0.25);
+        }
+
+        .ai-chat-bubble.user {
+            background: #eef2ff;
+            color: #1f2937;
+            align-self: flex-end;
+        }
+
+        .ai-chat-bubble.assistant {
+            background: #111827;
+            color: #e5e7eb;
+            border: 1px solid #1f2937;
+        }
+
+        .ai-chat-input {
+            display: flex;
+            gap: 12px;
+            margin-top: 14px;
+        }
+
+        .ai-chat-input input {
+            flex: 1;
+            padding: 12px;
+            border-radius: 10px;
+            border: 1px solid #d1d5db;
+            font-size: 0.95rem;
+        }
+
+        .ai-log-snippet {
+            margin-top: 10px;
+            padding: 10px;
+            background: rgba(255, 255, 255, 0.06);
+            border-radius: 8px;
+            font-family: 'Monaco', 'Courier New', monospace;
+            font-size: 0.8rem;
+            color: #cbd5f5;
+        }
         
         .log-entry {
             padding: 8px 12px;
@@ -680,6 +737,7 @@
                     <h2>Direct Messages</h2>
                 </div>
                 <button class="btn-primary" onclick="monitorDMs()">📬 Monitor & Auto-Reply</button>
+                <button class="btn-info" onclick="clearDMCache()">🗑️ Clear Reply Cache</button>
                 <div class="collapsible mt-2" onclick="toggleCollapsible('sendDMSection')">
                     <span>📩 Send Manual DM</span>
                     <span class="arrow" id="sendDMSectionArrow">▼</span>
@@ -732,13 +790,36 @@
                 </div>
             </div>
         </div>
+
+        <!-- AI Command Console -->
+        <div class="grid">
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-icon">🤖</div>
+                    <h2>AI Command Console</h2>
+                </div>
+                <div class="ai-chat-log" id="aiChatLog">
+                    <div class="ai-chat-bubble assistant">
+                        👋 Hi! I'm your automation copilot. Try asking me to run a Miami campaign, watch stories, or show the latest logs.
+                    </div>
+                </div>
+                <div class="ai-chat-input">
+                    <input type="text" id="aiCommandInput" placeholder="e.g. Run the Miami location campaign with 5 DMs">
+                    <button class="btn-primary" onclick="sendAiCommand()">Send</button>
+                </div>
+                <div class="loading" id="aiChatLoading">
+                    <div class="spinner"></div>
+                    <span>Thinking...</span>
+                </div>
+            </div>
+        </div>
         
         <!-- Logs and Screenshots Section -->
         <div class="grid grid-2">
             <div class="card">
                 <div class="card-header">
                     <div class="card-icon">📜</div>
-                    <h2>Activity Logs</h2>
+                    <h2>Activity Logs <span id="logCount" style="font-size: 14px; color: #667eea; font-weight: normal;"></span></h2>
                 </div>
                 <div class="log-container" id="logs">
                     <!-- Logs will appear here with newest at top -->
@@ -760,6 +841,8 @@
 
     <script>
         const API_URL = window.location.origin;
+
+        const aiChatHistory = [];
 
         async function apiCall(endpoint, method = 'GET', body = null) {
             try {
@@ -810,6 +893,74 @@
             while (logs.children.length > 100) {
                 logs.removeChild(logs.lastChild);
             }
+        }
+
+        function appendAiMessage(role, text) {
+            const container = document.getElementById('aiChatLog');
+            if (!container) return;
+            const bubble = document.createElement('div');
+            bubble.className = `ai-chat-bubble ${role}`;
+            bubble.innerHTML = text.replace(/\n/g, '<br>');
+            container.appendChild(bubble);
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function toggleAiChatLoading(active) {
+            const loading = document.getElementById('aiChatLoading');
+            if (!loading) return;
+            loading.classList.toggle('active', !!active);
+        }
+
+        async function sendAiCommand() {
+            const input = document.getElementById('aiCommandInput');
+            if (!input) return;
+            const message = input.value.trim();
+            if (!message.length) return;
+
+            appendAiMessage('user', message);
+            aiChatHistory.push({ role: 'user', content: message });
+            input.value = '';
+            toggleAiChatLoading(true);
+
+            const payload = {
+                message,
+                history: aiChatHistory.slice(-6),
+            };
+
+            const result = await apiCall('/api/ai/command', 'POST', payload);
+            toggleAiChatLoading(false);
+
+            if (result.error) {
+                appendAiMessage('assistant', `❌ ${result.error}`);
+                aiChatHistory.push({ role: 'assistant', content: `Error: ${result.error}` });
+                return;
+            }
+
+            const plan = result.plan || {};
+            const execution = result.execution || {};
+            const confidencePct = plan.confidence ? Math.round(plan.confidence * 100) : 0;
+            const summaryLine = plan.summary
+                ? `🧠 ${plan.summary} (${confidencePct}% confidence)`
+                : '🧠 Command interpreted.';
+            const executionLine = execution.message
+                ? `${execution.success ? '✅' : '⚠️'} ${execution.message}`
+                : 'No follow-up action was executed.';
+
+            let detailsBlock = '';
+            if (execution.details?.logs) {
+                const snippet = execution.details.logs.slice(-5).join('<br>');
+                detailsBlock = `<div class="ai-log-snippet">${snippet}</div>`;
+            } else if (execution.details?.help) {
+                detailsBlock = `<div class="ai-log-snippet">${execution.details.help.replace(/\n/g, '<br>')}</div>`;
+            } else if (execution.details) {
+                detailsBlock = `<div class="ai-log-snippet">${JSON.stringify(execution.details, null, 2)}</div>`;
+            }
+
+            appendAiMessage('assistant', `${summaryLine}<br>${executionLine}${detailsBlock ? `<br>${detailsBlock}` : ''}`);
+            aiChatHistory.push({
+                role: 'assistant',
+                content: `${summaryLine}\n${executionLine}`,
+            });
         }
 
         function toggleCollapsible(id) {
@@ -1151,6 +1302,21 @@
                 addLog('✅ ' + result.message);
             }
         }
+        
+        async function clearDMCache() {
+            if (!confirm('Clear the replied conversations cache? This will allow the bot to reply to previously-handled DMs again.')) {
+                return;
+            }
+            
+            addLog('🗑️ Clearing replied conversations cache...');
+            const result = await apiCall('/api/dms/clear-cache', 'POST');
+            
+            if (result.error) {
+                addLog('❌ Error: ' + result.error);
+            } else {
+                addLog('✅ ' + result.message);
+            }
+        }
 
         async function scrapeFollowers() {
             const targetAccount = document.getElementById('targetAccount').value.trim();
@@ -1259,7 +1425,7 @@
         }
         
         async function viewLogs() {
-            const result = await apiCall('/api/logs/recent?lines=100');
+            const result = await apiCall('/api/logs/recent?lines=500');
             
             if (result.error) {
                 console.error('Error fetching logs:', result.error);
@@ -1283,13 +1449,13 @@
                     entry.className = 'log-entry';
                     
                     // Color code based on content
-                    if (line.includes('✅') || line.includes('Successfully')) {
+                    if (line.includes('✅') || line.includes('Successfully') || line.includes('liked') || line.includes('Comment posted')) {
                         entry.classList.add('log-success');
-                    } else if (line.includes('❌') || line.includes('error:')) {
+                    } else if (line.includes('❌') || line.includes('error:') || line.includes('Error') || line.includes('failed')) {
                         entry.classList.add('log-error');
-                    } else if (line.includes('⚠️') || line.includes('warn:')) {
+                    } else if (line.includes('⚠️') || line.includes('warn:') || line.includes('Warning')) {
                         entry.classList.add('log-warning');
-                    } else if (line.includes('info:') || line.includes('📡')) {
+                    } else if (line.includes('info:') || line.includes('📡') || line.includes('📍') || line.includes('🔍') || line.includes('📸') || line.includes('📩')) {
                         entry.classList.add('log-info');
                     }
                     
@@ -1297,6 +1463,13 @@
                     logs.appendChild(entry);
                 });
             }
+            
+            // Update log count
+            const logCount = document.getElementById('logCount');
+            logCount.textContent = `(${lines.length} lines)`;
+            
+            // Auto-scroll to bottom (newest logs)
+            logs.scrollTop = logs.scrollHeight;
         }
         
         function toggleLiveLog() {
@@ -1312,11 +1485,11 @@
             } else {
                 // Start live refresh
                 viewLogs(); // Fetch immediately
-                logRefreshInterval = setInterval(viewLogs, 3000); // Refresh every 3 seconds
+                logRefreshInterval = setInterval(viewLogs, 2000); // Refresh every 2 seconds (faster)
                 btn.textContent = '⏸️ Stop Live Log';
                 btn.classList.remove('btn-success');
                 btn.classList.add('btn-danger');
-                addLog('▶️ Live log started (updates every 3s)');
+                addLog('▶️ Live log started (updates every 2s)');
             }
         }
 
@@ -1339,6 +1512,16 @@
             document.getElementById('proxyEnabled').addEventListener('change', toggleProxyFields);
             document.getElementById('storyAiReplyEnabled').addEventListener('change', toggleStoryAiOptions);
             toggleStoryAiOptions();
+
+            const aiInput = document.getElementById('aiCommandInput');
+            if (aiInput) {
+                aiInput.addEventListener('keydown', (event) => {
+                    if (event.key === 'Enter' && !event.shiftKey) {
+                        event.preventDefault();
+                        sendAiCommand();
+                    }
+                });
+            }
             
             addLog('🤖 Dashboard loaded - Marketing Team App');
             addLog('💡 Ready to generate leads!');

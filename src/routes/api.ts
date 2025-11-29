@@ -6,6 +6,9 @@ import { signToken, verifyToken, getTokenFromRequest } from '../secret';
 import fs from 'fs/promises';
 import path from 'path';
 import dotenv from 'dotenv';
+import { runAgent } from '../Agent';
+import { getAutomationCommandSchema } from '../Agent/schema';
+import { Instagram_cookiesExist } from '../utils';
 import type { InteractionOptions, StoryOptions } from '../client/IG-bot/types';
 
 const router = express.Router();
@@ -28,6 +31,244 @@ async function fileExists(filePath: string): Promise<boolean> {
   }
 }
 
+type AiChatTurn = {
+  role: 'user' | 'assistant';
+  content: string;
+};
+
+type AiCommandPlan = {
+  action: 'campaign' | 'interact' | 'stories' | 'status' | 'logs' | 'help';
+  mode?: string | null;
+  hashtag?: string | null;
+  locationPath?: string | null;
+  targetUsername?: string | null;
+  maxPosts?: number | null;
+  sendDMs?: boolean | null;
+  inspectProfiles?: boolean | null;
+  maxOutboundDMs?: number | null;
+  requiredBioKeywords?: string[] | null;
+  englishOnly?: boolean | null;
+  imagesOnly?: boolean | null;
+  storyCount?: number | null;
+  storyTarget?: string | null;
+  aiReplies?: boolean | null;
+  tone?: 'friendly' | 'consultative' | 'hype' | null;
+  summary: string;
+  confidence: number;
+  notes?: string | null;
+};
+
+const SUPPORTED_AI_ACTIONS = new Set(['campaign', 'interact', 'stories', 'status', 'logs', 'help']);
+
+const buildAiCommandPrompt = (message: string, history: AiChatTurn[] = []) => {
+  const trimmedHistory = history
+    .filter((turn) => typeof turn?.content === 'string' && turn.content.trim().length)
+    .slice(-6);
+
+  const historyBlock = trimmedHistory
+    .map((turn) => `${turn.role === 'assistant' ? 'Assistant' : 'User'}: ${turn.content.trim()}`)
+    .join('\n');
+
+  return `
+You are Riona's automation planner. Interpret natural language commands and map them to the automation capabilities.
+Supported actions:
+- campaign/interact: run post engagement or DM campaigns. Use fields mode, hashtag, locationPath, targetUsername, maxPosts, sendDMs, inspectProfiles, maxOutboundDMs, requiredBioKeywords, englishOnly, imagesOnly.
+- stories: watch stories. Use fields storyCount, storyTarget, aiReplies, tone.
+- status: provide a status summary only (no automation run).
+- logs: provide the latest bot logs (no automation run).
+- help: when the request is outside scope or unclear.
+
+Always respond with the JSON that matches the provided schema. Confidence must be between 0 and 1.
+
+Conversation so far:
+${historyBlock || 'None.'}
+
+User command:
+${message}`.trim();
+};
+
+const sanitizeAiCommandPlan = (raw: any): AiCommandPlan | null => {
+  if (!raw || typeof raw !== 'object') return null;
+  if (typeof raw.action !== 'string' || !SUPPORTED_AI_ACTIONS.has(raw.action)) return null;
+  if (typeof raw.summary !== 'string' || !raw.summary.trim().length) return null;
+  const confidence =
+    typeof raw.confidence === 'number' && !Number.isNaN(raw.confidence)
+      ? Math.min(1, Math.max(0, raw.confidence))
+      : 0.5;
+
+  return {
+    action: raw.action,
+    mode: raw.mode ?? null,
+    hashtag: raw.hashtag ?? null,
+    locationPath: raw.locationPath ?? null,
+    targetUsername: raw.targetUsername ?? null,
+    maxPosts: raw.maxPosts ?? null,
+    sendDMs: raw.sendDMs ?? null,
+    inspectProfiles: raw.inspectProfiles ?? null,
+    maxOutboundDMs: raw.maxOutboundDMs ?? null,
+    requiredBioKeywords: raw.requiredBioKeywords ?? null,
+    englishOnly: raw.englishOnly ?? null,
+    imagesOnly: raw.imagesOnly ?? null,
+    storyCount: raw.storyCount ?? null,
+    storyTarget: raw.storyTarget ?? null,
+    aiReplies: raw.aiReplies ?? null,
+    tone: raw.tone ?? null,
+    summary: raw.summary.trim(),
+    confidence,
+    notes: raw.notes ?? null,
+  };
+};
+
+const normalizeHashtag = (value: string | null | undefined) => {
+  if (!value || typeof value !== 'string') return undefined;
+  const cleaned = value.replace(/#/g, '').trim();
+  return cleaned.length ? cleaned : undefined;
+};
+
+const coerceBoolean = (value: boolean | null | undefined) =>
+  typeof value === 'boolean' ? value : undefined;
+
+const coerceNumber = (value: number | null | undefined) =>
+  typeof value === 'number' && !Number.isNaN(value) ? value : undefined;
+
+const fetchRecentLogs = async (limit = 40): Promise<string[]> => {
+  const now = new Date();
+  const dateSlug = now.toISOString().split('T')[0];
+  const logPath = path.join(logsDirectory, `${dateSlug}-combined.log`);
+
+  if (!(await fileExists(logPath))) {
+    return ['No log entries recorded for today yet.'];
+  }
+
+  const raw = await fs.readFile(logPath, 'utf-8');
+  const cleaned = raw.trim().split(/\r?\n/).filter(Boolean);
+  return cleaned.slice(-limit);
+};
+
+const helpSummary = [
+  'Try commands like:',
+  '• "Run the Miami location campaign with 5 DMs"',
+  '• "Inspect 3 posts from #goodfoods and skip comments"',
+  '• "Watch 8 stories for @username with AI replies"',
+  '• "Show me today\'s logs" or "What is the bot status?"',
+].join('\n');
+
+const buildInteractionOptionsFromPlan = (plan: AiCommandPlan): InteractionOptions => {
+  const options: InteractionOptions = {};
+  if (plan.mode && typeof plan.mode === 'string') {
+    options.mode = plan.mode as InteractionOptions['mode'];
+  }
+  const hashtag = normalizeHashtag(plan.hashtag);
+  if (hashtag) {
+    options.hashtags = [hashtag];
+  }
+  if (plan.locationPath) {
+    options.locationPath = plan.locationPath;
+  }
+  if (plan.targetUsername && plan.mode === 'competitor_followers') {
+    options.competitorUsername = plan.targetUsername;
+  }
+  if (coerceBoolean(plan.inspectProfiles) !== undefined) {
+    options.inspectProfile = plan.inspectProfiles ?? undefined;
+  }
+  if (coerceBoolean(plan.sendDMs) !== undefined) {
+    options.sendDMs = plan.sendDMs ?? undefined;
+  }
+  if (coerceNumber(plan.maxOutboundDMs) !== undefined) {
+    options.maxOutboundDMs = plan.maxOutboundDMs ?? undefined;
+  }
+  if (Array.isArray(plan.requiredBioKeywords) && plan.requiredBioKeywords.length) {
+    options.requiredBioKeywords = plan.requiredBioKeywords.filter(
+      (keyword) => typeof keyword === 'string' && keyword.trim().length
+    );
+  }
+  if (coerceBoolean(plan.englishOnly) !== undefined) {
+    options.englishOnly = plan.englishOnly ?? undefined;
+  }
+  if (coerceBoolean(plan.imagesOnly) !== undefined) {
+    options.imagesOnly = plan.imagesOnly ?? undefined;
+  }
+  return options;
+};
+
+const buildStoryOptionsFromPlan = (plan: AiCommandPlan): StoryOptions => {
+  const options: StoryOptions = {};
+  if (coerceNumber(plan.storyCount) !== undefined) {
+    options.storyCount = plan.storyCount ?? undefined;
+  }
+  if (plan.storyTarget) {
+    options.targetUsername = plan.storyTarget;
+  }
+  if (plan.aiReplies) {
+    options.aiReply = {
+      enabled: true,
+      tone: plan.tone ?? undefined,
+    };
+  }
+  return options;
+};
+
+const executeAiCommandPlan = async (
+  plan: AiCommandPlan,
+  username: string
+): Promise<{ success: boolean; message: string; details?: any }> => {
+  switch (plan.action) {
+    case 'campaign':
+    case 'interact': {
+      const igClient = await getIgClient(username);
+      const options = buildInteractionOptionsFromPlan(plan);
+      const maxPosts = coerceNumber(plan.maxPosts) ?? 5;
+      const targetForMode = plan.mode === 'user' ? plan.targetUsername ?? undefined : undefined;
+      await igClient.interactWithPosts(targetForMode, maxPosts, options);
+      return {
+        success: true,
+        message: `Campaign executed (${options.mode || 'feed'}) for ${maxPosts} posts.`,
+        details: { options },
+      };
+    }
+    case 'stories': {
+      const igClient = await getIgClient(username);
+      const options = buildStoryOptionsFromPlan(plan);
+      options.storyCount = options.storyCount ?? 5;
+      await igClient.watchStories(options);
+      return {
+        success: true,
+        message: `Watching ${options.storyCount} stories${options.targetUsername ? ` for ${options.targetUsername}` : ''
+          }.`,
+        details: { options },
+      };
+    }
+    case 'status': {
+      const dbConnected = mongoose.connection.readyState === 1;
+      const cookiesReady = await Instagram_cookiesExist();
+      const proxyEnabled = process.env.PROXY_ENABLED === 'true';
+      return {
+        success: true,
+        message: dbConnected ? 'Bot is online.' : 'Database offline, bot still running in memory mode.',
+        details: {
+          dbConnected,
+          cookiesReady,
+          proxyEnabled,
+        },
+      };
+    }
+    case 'logs': {
+      const lines = await fetchRecentLogs(20);
+      return {
+        success: true,
+        message: 'Latest activity logs attached.',
+        details: { logs: lines },
+      };
+    }
+    case 'help':
+    default:
+      return {
+        success: true,
+        message: 'Here is what I can help with:',
+        details: { help: helpSummary },
+      };
+  }
+};
 // JWT Auth middleware
 function requireAuth(req: Request, res: Response, next: Function) {
   const token = getTokenFromRequest(req);
@@ -202,6 +443,49 @@ router.get('/proxy/status', async (req: Request, res: Response) => {
 
 // All routes below require authentication
 router.use(requireAuth);
+
+router.post('/ai/command', async (req: Request, res: Response) => {
+  try {
+    const { message, history } = req.body;
+    if (typeof message !== 'string' || !message.trim().length) {
+      return res.status(400).json({ error: 'Command message is required.' });
+    }
+
+    const historyTurns: AiChatTurn[] = Array.isArray(history)
+      ? history
+          .map((turn: any) => {
+            const normalizedRole: AiChatTurn['role'] = turn?.role === 'assistant' ? 'assistant' : 'user';
+            return {
+              role: normalizedRole,
+              content: typeof turn?.content === 'string' ? turn.content : '',
+            };
+          })
+          .filter((turn) => turn.content.trim().length)
+      : [];
+
+    const prompt = buildAiCommandPrompt(message.trim(), historyTurns);
+    const schema = getAutomationCommandSchema();
+    const rawPlan = await runAgent(schema as any, prompt);
+    const plan = sanitizeAiCommandPlan(rawPlan);
+
+    if (!plan) {
+      return res.status(422).json({
+        error: 'I could not understand that request. Try being a bit more specific.',
+      });
+    }
+
+    const execution = await executeAiCommandPlan(plan, (req as any).user.username);
+
+    return res.json({
+      success: execution.success,
+      plan,
+      execution,
+    });
+  } catch (error) {
+    logger.error('AI command error:', error);
+    return res.status(500).json({ error: 'Failed to process AI command' });
+  }
+});
 
 router.get('/logs/recent', async (req: Request, res: Response) => {
   try {
@@ -488,6 +772,18 @@ router.post('/monitor-dms', async (req: Request, res: Response) => {
   } catch (error) {
     logger.error('DM monitoring error:', error);
     return res.status(500).json({ error: 'Failed to monitor DMs' });
+  }
+});
+
+// Clear replied conversations cache
+router.post('/dms/clear-cache', async (req: Request, res: Response) => {
+  try {
+    const igClient = await getIgClient((req as any).user.username);
+    await igClient.clearRepliedConversationsCache();
+    return res.json({ message: 'Replied conversations cache cleared successfully' });
+  } catch (error) {
+    logger.error('Clear cache error:', error);
+    return res.status(500).json({ error: 'Failed to clear cache' });
   }
 });
 

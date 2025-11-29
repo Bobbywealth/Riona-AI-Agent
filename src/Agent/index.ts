@@ -2,7 +2,6 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import logger from "../config/logger";
 import { geminiApiKeys } from "../secret";
 import { handleError } from "../utils";
-import { InstagramCommentSchema } from "./schema";
 import fs from "fs";
 import path from "path";
 import * as readlineSync from "readline-sync";
@@ -30,7 +29,7 @@ const getNextAgentApiKey = () => {
 };
 
 export async function runAgent(
-  schema: InstagramCommentSchema,
+  schema: any,
   prompt: string,
   apiKeyIndex: number = currentAgentApiKeyIndex,
   imageBase64?: string
