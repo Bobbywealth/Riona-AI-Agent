@@ -4,6 +4,7 @@ expertMode = true
 
 [nix]
 channel = "stable-25_05"
+packages = ["glib", "nss", "nspr", "at-spi2-atk", "cups", "libdrm", "libxkbcommon", "xorg.libxcb", "xorg.libX11", "xorg.libXcomposite", "xorg.libXdamage", "xorg.libXext", "xorg.libXfixes", "xorg.libXrandr", "mesa", "expat", "alsa-lib", "pango", "cairo", "gtk3"]
 
 [userenv]
 
@@ -41,6 +42,10 @@ outputType = "webview"
 [[ports]]
 localPort = 5000
 externalPort = 80
+
+[[ports]]
+localPort = 34221
+externalPort = 3000
 
 [deployment]
 deploymentTarget = "autoscale"
