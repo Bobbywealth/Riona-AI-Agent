@@ -293,6 +293,7 @@ export class IgClient {
         this.browser = await puppeteerExtra.launch({
             headless: true, // Run in headless mode (no GUI needed on server)
             args: launchArgs,
+            executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/nix/store/qa9cnw4v5xkxyip6mb9kxqfq1z4x2dx1-chromium-138.0.7204.100/bin/chromium',
         });
         this.page = await this.browser.newPage();
         
