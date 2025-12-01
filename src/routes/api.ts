@@ -542,28 +542,111 @@ router.get('/logs/recent', async (req: Request, res: Response) => {
   try {
     const limit =
       typeof req.query.lines === 'string' && !Number.isNaN(parseInt(req.query.lines, 10))
-        ? Math.min(200, Math.max(10, parseInt(req.query.lines, 10)))
-        : 50;
+        ? Math.min(500, Math.max(10, parseInt(req.query.lines, 10)))
+        : 100;
+    
+    const levelFilter = typeof req.query.level === 'string' ? req.query.level.toLowerCase() : null;
+    const categoryFilter = typeof req.query.category === 'string' ? req.query.category.toLowerCase() : null;
 
     const now = new Date();
     const dateSlug = now.toISOString().split('T')[0];
     const logPath = path.join(logsDirectory, `${dateSlug}-combined.log`);
 
     if (!(await fileExists(logPath))) {
-      return res.json({ lines: ['No log entries recorded for today yet.'] });
+      return res.json({ logs: [], stats: { total: 0, info: 0, warn: 0, error: 0, debug: 0 } });
     }
 
     const raw = await fs.readFile(logPath, 'utf-8');
-    const cleaned = raw.trim().split(/\r?\n/).filter(Boolean);
-    const lines = cleaned.slice(-limit);
-    return res.json({ lines });
+    const rawLines = raw.trim().split(/\r?\n/).filter(Boolean);
+    
+    // Helper to strip ANSI color codes from strings
+    const stripAnsi = (str: string): string => {
+      return str.replace(/\x1b\[[0-9;]*m/g, '');
+    };
+    
+    // Parse JSON log entries and add categories
+    const parsedLogs = rawLines.map((line, index) => {
+      try {
+        const parsed = JSON.parse(line);
+        const message = parsed.message || '';
+        
+        // Clean level (strip ANSI codes and normalize)
+        let level = stripAnsi(String(parsed.level || 'info')).toLowerCase();
+        if (!['info', 'warn', 'error', 'debug'].includes(level)) {
+          level = 'info';
+        }
+        
+        // Detect category based on message content
+        let category = 'system';
+        const msgLower = message.toLowerCase();
+        if (msgLower.includes('login') || msgLower.includes('cookie') || msgLower.includes('logged') || msgLower.includes('session')) {
+          category = 'login';
+        } else if (msgLower.includes('campaign') || msgLower.includes('comment') || msgLower.includes('interact') || msgLower.includes('liking') || msgLower.includes('liked')) {
+          category = 'campaign';
+        } else if (msgLower.includes('story') || msgLower.includes('stories')) {
+          category = 'story';
+        } else if (msgLower.includes('dm') || msgLower.includes('direct message')) {
+          category = 'dm';
+        } else if (msgLower.includes('proxy')) {
+          category = 'proxy';
+        } else if (msgLower.includes('scheduler') || msgLower.includes('cron') || msgLower.includes('schedule')) {
+          category = 'scheduler';
+        } else if (msgLower.includes('screenshot') || msgLower.includes('📸')) {
+          category = 'screenshot';
+        } else if (msgLower.includes('browser') || msgLower.includes('puppeteer') || msgLower.includes('chromium')) {
+          category = 'browser';
+        } else if (msgLower.includes('warning') || msgLower.includes('duplicate')) {
+          category = 'system';
+        }
+        
+        return {
+          id: index,
+          level: level,
+          message: message,
+          timestamp: parsed.timestamp || new Date().toISOString(),
+          category: category
+        };
+      } catch {
+        // If not valid JSON, return as plain text
+        return {
+          id: index,
+          level: 'info',
+          message: line,
+          timestamp: new Date().toISOString(),
+          category: 'system'
+        };
+      }
+    });
+    
+    // Calculate stats before filtering
+    const stats = {
+      total: parsedLogs.length,
+      info: parsedLogs.filter(l => l.level === 'info').length,
+      warn: parsedLogs.filter(l => l.level === 'warn').length,
+      error: parsedLogs.filter(l => l.level === 'error').length,
+      debug: parsedLogs.filter(l => l.level === 'debug').length
+    };
+    
+    // Apply filters
+    let filteredLogs = parsedLogs;
+    if (levelFilter && levelFilter !== 'all') {
+      filteredLogs = filteredLogs.filter(l => l.level === levelFilter);
+    }
+    if (categoryFilter && categoryFilter !== 'all') {
+      filteredLogs = filteredLogs.filter(l => l.category === categoryFilter);
+    }
+    
+    // Get the most recent entries
+    const logs = filteredLogs.slice(-limit).reverse();
+    
+    return res.json({ logs, stats });
   } catch (error) {
     logger.error('Recent logs fetch error:', error);
     return res.status(500).json({ error: 'Failed to load recent logs' });
   }
 });
 
-// Get recent screenshots
+// Screenshots endpoint - also accessible without auth for debugging
 router.get('/screenshots/list', async (req: Request, res: Response) => {
   try {
     const screenshotDirs = [
@@ -571,6 +654,7 @@ router.get('/screenshots/list', async (req: Request, res: Response) => {
       path.join(__dirname, '../../logs/profile-screens'),
       path.join(__dirname, '../../logs/dm-outreach'),
       path.join(__dirname, '../../logs/feed-screens'),
+      path.join(__dirname, '../../logs/debug'),
     ];
 
     const screenshots: Array<{ path: string; name: string; timestamp: number; type: string }> = [];
@@ -580,7 +664,8 @@ router.get('/screenshots/list', async (req: Request, res: Response) => {
         const files = await fs.readdir(dir);
         const type = dir.includes('post-screens') ? 'post' : 
                      dir.includes('profile-screens') ? 'profile' :
-                     dir.includes('dm-outreach') ? 'dm' : 'feed';
+                     dir.includes('dm-outreach') ? 'dm' : 
+                     dir.includes('debug') ? 'debug' : 'feed';
         
         for (const file of files) {
           if (file.endsWith('.png') || file.endsWith('.jpg')) {
@@ -608,13 +693,13 @@ router.get('/screenshots/list', async (req: Request, res: Response) => {
   }
 });
 
-// Serve a specific screenshot
+// Serve a specific screenshot (also public)
 router.get('/screenshots/view/:type/:filename', async (req: Request, res: Response) => {
   try {
     const { type, filename } = req.params;
     
     // Validate type
-    const validTypes = ['post', 'profile', 'dm', 'feed'];
+    const validTypes = ['post', 'profile', 'dm', 'feed', 'debug'];
     if (!validTypes.includes(type)) {
       return res.status(400).json({ error: 'Invalid screenshot type' });
     }
@@ -625,6 +710,7 @@ router.get('/screenshots/view/:type/:filename', async (req: Request, res: Respon
       profile: 'profile-screens',
       dm: 'dm-outreach',
       feed: 'feed-screens',
+      debug: 'debug',
     };
 
     const screenshotPath = path.join(__dirname, '../../logs', dirMap[type], filename);
@@ -649,6 +735,9 @@ router.get('/screenshots/view/:type/:filename', async (req: Request, res: Respon
     return res.status(500).json({ error: 'Failed to load screenshot', details: String(error) });
   }
 });
+
+// All routes below require authentication
+router.use(requireAuth);
 
 // Interact with posts endpoint
 router.post('/interact', async (req: Request, res: Response) => {
