@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Instagram Bot Dashboard - Marketing Team App</title>
+    <title>Instagram Bot Dashboard</title>
     <style>
         :root {
             --primary: #6366f1;
@@ -15,81 +15,75 @@
             --dark: #1f2937;
             --light: #f9fafb;
             --border: #e5e7eb;
-            --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-            --shadow-lg: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+            --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
         }
         
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
         
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
-            padding: 20px;
             color: var(--dark);
         }
         
-        .container {
-            max-width: 1400px;
+        .app-container {
+            max-width: 1200px;
             margin: 0 auto;
+            padding: 15px;
         }
         
-        /* Header */
+        /* Compact Header with Status */
         .header {
             background: white;
-            border-radius: 20px;
-            padding: 30px;
-            margin-bottom: 30px;
+            border-radius: 16px;
+            padding: 15px 25px;
+            margin-bottom: 15px;
             box-shadow: var(--shadow-lg);
             display: flex;
             justify-content: space-between;
             align-items: center;
             flex-wrap: wrap;
-            gap: 20px;
+            gap: 15px;
         }
         
         .header h1 {
-            font-size: 2em;
+            font-size: 1.5em;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
             background-clip: text;
             display: flex;
             align-items: center;
-            gap: 15px;
+            gap: 10px;
         }
         
-        .status-badge {
-            display: inline-flex;
+        .status-indicators {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+        
+        .status-pill {
+            display: flex;
             align-items: center;
-            gap: 8px;
-            padding: 10px 20px;
-            border-radius: 50px;
-            font-size: 14px;
+            gap: 6px;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 12px;
             font-weight: 600;
             background: var(--light);
-            border: 2px solid var(--border);
+            border: 1px solid var(--border);
         }
         
-        .status-badge.online {
-            background: #d1fae5;
-            border-color: var(--success);
-            color: var(--success);
-        }
-        
-        .status-badge.offline {
-            background: #fee2e2;
-            border-color: var(--danger);
-            color: var(--danger);
-        }
+        .status-pill.online { background: #d1fae5; border-color: var(--success); color: #065f46; }
+        .status-pill.offline { background: #fee2e2; border-color: var(--danger); color: #991b1b; }
+        .status-pill.warning { background: #fef3c7; border-color: var(--warning); color: #92400e; }
         
         .pulse {
-            width: 10px;
-            height: 10px;
+            width: 8px;
+            height: 8px;
             border-radius: 50%;
             background: currentColor;
             animation: pulse 2s infinite;
@@ -97,82 +91,129 @@
         
         @keyframes pulse {
             0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
+            50% { opacity: 0.4; }
         }
         
-        /* Grid Layout */
-        .grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
-            gap: 25px;
-            margin-bottom: 30px;
+        /* Tab Navigation */
+        .tab-nav {
+            background: white;
+            border-radius: 16px;
+            padding: 8px;
+            margin-bottom: 15px;
+            box-shadow: var(--shadow);
+            display: flex;
+            gap: 8px;
+            overflow-x: auto;
         }
         
-        .grid-2 {
-            grid-template-columns: repeat(auto-fit, minmax(500px, 1fr));
+        .tab-btn {
+            flex: 1;
+            min-width: 100px;
+            padding: 12px 20px;
+            border: none;
+            border-radius: 10px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            background: transparent;
+            color: #6b7280;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            white-space: nowrap;
+        }
+        
+        .tab-btn:hover {
+            background: var(--light);
+            color: var(--dark);
+        }
+        
+        .tab-btn.active {
+            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+            color: white;
+        }
+        
+        /* Tab Content */
+        .tab-content {
+            display: none;
+        }
+        
+        .tab-content.active {
+            display: block;
         }
         
         /* Cards */
         .card {
             background: white;
-            border-radius: 20px;
-            padding: 30px;
+            border-radius: 16px;
+            padding: 20px;
+            margin-bottom: 15px;
             box-shadow: var(--shadow);
-            transition: transform 0.3s, box-shadow 0.3s;
-        }
-        
-        .card:hover {
-            transform: translateY(-5px);
-            box-shadow: var(--shadow-lg);
         }
         
         .card-header {
             display: flex;
             align-items: center;
-            gap: 12px;
-            margin-bottom: 20px;
-            padding-bottom: 15px;
-            border-bottom: 2px solid var(--light);
+            gap: 10px;
+            margin-bottom: 15px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid var(--border);
         }
         
         .card-icon {
-            font-size: 28px;
-            width: 50px;
-            height: 50px;
+            font-size: 20px;
+            width: 36px;
+            height: 36px;
             display: flex;
             align-items: center;
             justify-content: center;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            border-radius: 12px;
-            color: white;
+            border-radius: 8px;
         }
         
         .card h2 {
-            font-size: 1.3em;
+            font-size: 1.1em;
             color: var(--dark);
             flex: 1;
         }
         
+        .card-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 15px;
+        }
+        
         /* Form Elements */
         .form-group {
-            margin-bottom: 15px;
+            margin-bottom: 12px;
+        }
+        
+        .form-row {
+            display: flex;
+            gap: 12px;
+        }
+        
+        .form-row .form-group {
+            flex: 1;
         }
         
         label {
             display: block;
             font-weight: 600;
-            margin-bottom: 8px;
+            margin-bottom: 6px;
             color: var(--dark);
-            font-size: 14px;
+            font-size: 13px;
         }
         
         input, select, textarea {
             width: 100%;
-            padding: 12px 16px;
+            padding: 10px 14px;
             border: 2px solid var(--border);
-            border-radius: 10px;
+            border-radius: 8px;
             font-size: 14px;
-            transition: all 0.3s;
+            transition: all 0.2s;
             font-family: inherit;
         }
         
@@ -184,70 +225,52 @@
         
         textarea {
             resize: vertical;
-            min-height: 100px;
+            min-height: 80px;
         }
         
         /* Buttons */
         button {
-            width: 100%;
-            padding: 14px 20px;
+            padding: 10px 16px;
             border: none;
-            border-radius: 10px;
-            font-size: 15px;
+            border-radius: 8px;
+            font-size: 14px;
             font-weight: 600;
             cursor: pointer;
-            transition: all 0.3s;
-            display: flex;
+            transition: all 0.2s;
+            display: inline-flex;
             align-items: center;
             justify-content: center;
-            gap: 8px;
-            margin-top: 10px;
+            gap: 6px;
         }
         
         button:hover {
-            transform: translateY(-2px);
+            transform: translateY(-1px);
             box-shadow: var(--shadow);
-        }
-        
-        button:active {
-            transform: translateY(0);
         }
         
         .btn-primary {
             background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
             color: white;
+            width: 100%;
         }
         
-        .btn-success {
-            background: var(--success);
-            color: white;
-        }
-        
-        .btn-danger {
-            background: var(--danger);
-            color: white;
-        }
-        
-        .btn-info {
-            background: var(--info);
-            color: white;
-        }
-        
-        .btn-secondary {
-            background: #6b7280;
-            color: white;
-        }
+        .btn-success { background: var(--success); color: white; }
+        .btn-danger { background: var(--danger); color: white; }
+        .btn-info { background: var(--info); color: white; }
+        .btn-secondary { background: #6b7280; color: white; }
+        .btn-sm { padding: 8px 12px; font-size: 13px; }
+        .btn-full { width: 100%; margin-top: 10px; }
         
         /* Checkbox */
         .checkbox-group {
             display: flex;
             align-items: center;
-            gap: 10px;
-            padding: 12px;
+            gap: 8px;
+            padding: 10px;
             background: var(--light);
-            border-radius: 10px;
+            border-radius: 8px;
             cursor: pointer;
-            margin: 10px 0;
+            margin: 8px 0;
         }
         
         .checkbox-group input[type="checkbox"] {
@@ -255,16 +278,9 @@
             cursor: pointer;
         }
         
-        /* Status Messages */
-        .status-message {
-            padding: 15px;
-            border-radius: 10px;
-            margin-top: 15px;
-            font-size: 14px;
+        .checkbox-group label {
+            margin: 0;
             font-weight: 500;
-            display: flex;
-            align-items: center;
-            gap: 10px;
         }
         
         .status-message.success {
@@ -430,20 +446,18 @@
         /* Collapsible Sections */
         .collapsible {
             cursor: pointer;
-            user-select: none;
             display: flex;
             align-items: center;
             justify-content: space-between;
-            padding: 12px;
+            padding: 10px 12px;
             background: var(--light);
-            border-radius: 10px;
-            margin-bottom: 15px;
+            border-radius: 8px;
+            margin: 10px 0;
             font-weight: 600;
+            font-size: 13px;
         }
         
-        .collapsible:hover {
-            background: #e5e7eb;
-        }
+        .collapsible-header:hover { background: #e5e7eb; }
         
         .collapsible-content {
             max-height: 0;
@@ -452,69 +466,120 @@
         }
         
         .collapsible-content.active {
-            max-height: 1000px;
+            max-height: 500px;
         }
         
         .arrow {
             transition: transform 0.3s;
+            font-size: 12px;
         }
         
-        .arrow.active {
-            transform: rotate(180deg);
+        .arrow.active { transform: rotate(180deg); }
+        
+        /* Status Messages */
+        .status-message {
+            padding: 10px 12px;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 10px;
+        }
+        
+        .status-message.success { background: #d1fae5; color: #065f46; }
+        .status-message.error { background: #fee2e2; color: #991b1b; }
+        .status-message.info { background: #dbeafe; color: #1e40af; }
+        
+        /* Loading */
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 12px;
+            color: var(--primary);
+            font-weight: 600;
+            font-size: 13px;
+        }
+        
+        .loading.active {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+        
+        .spinner {
+            width: 16px;
+            height: 16px;
+            border: 2px solid var(--light);
+            border-top-color: var(--primary);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+        
+        @keyframes spin { to { transform: rotate(360deg); } }
+        
+        /* Logs */
+        .log-container {
+            background: var(--dark);
+            color: #d1d5db;
+            padding: 15px;
+            border-radius: 8px;
+            max-height: 300px;
+            overflow-y: auto;
+            font-family: 'Monaco', 'Courier New', monospace;
+            font-size: 12px;
+            line-height: 1.5;
+        }
+        
+        .log-entry {
+            padding: 6px 10px;
+            margin-bottom: 3px;
+            border-radius: 4px;
+            background: rgba(255, 255, 255, 0.05);
+            border-left: 2px solid #6b7280;
+        }
+        
+        .log-entry.log-success { color: #10b981; border-left-color: #10b981; }
+        .log-entry.log-error { color: #ef4444; border-left-color: #ef4444; }
+        .log-entry.log-warning { color: #f59e0b; border-left-color: #f59e0b; }
+        .log-entry.log-info { color: #3b82f6; border-left-color: #3b82f6; }
+        
+        /* Quick Actions Bar */
+        .quick-actions {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-bottom: 15px;
+        }
+        
+        .quick-actions button {
+            flex: 1;
+            min-width: 120px;
         }
         
         /* Responsive */
         @media (max-width: 768px) {
-            .header {
-                flex-direction: column;
-                text-align: center;
-            }
-            
-            .grid {
-                grid-template-columns: 1fr;
-            }
-            
-            .grid-2 {
-                grid-template-columns: 1fr;
-            }
+            .header { flex-direction: column; text-align: center; }
+            .tab-btn { min-width: 80px; padding: 10px 12px; font-size: 12px; }
+            .card-grid { grid-template-columns: 1fr; }
+            .form-row { flex-direction: column; }
         }
         
-        /* Utility Classes */
+        .hidden { display: none !important; }
         .mt-2 { margin-top: 10px; }
-        .mb-2 { margin-bottom: 10px; }
-        .text-center { text-align: center; }
-        .flex { display: flex; }
-        .gap-2 { gap: 10px; }
-        .hidden { display: none; }
-        .card-divider {
-            width: 100%;
-            height: 1px;
-            background: var(--border);
-            margin: 20px 0;
-        }
     </style>
 </head>
 <body>
-    <div class="container">
-        <!-- Header -->
+    <div class="app-container">
+        <!-- Compact Header with Status Indicators -->
         <div class="header">
-            <h1>
-                <span>🤖</span>
-                Instagram Lead Gen Copilot
-            </h1>
-            <div id="statusBadge" class="status-badge offline">
-                <div class="pulse"></div>
-                <span>Checking...</span>
-            </div>
-        </div>
-        
-        <!-- Main Grid -->
-        <div class="grid">
-            <!-- Account Control -->
-            <div class="card">
-                <div class="card-header">
-                    <div class="card-icon">🔐</div>
-                    <h2>Account</h2>
+            <h1><span>🤖</span> Instagram Bot</h1>
+            <div class="status-indicators">
+                <div id="loginStatus" class="status-pill offline">
+                    <div class="pulse"></div>
+                    <span>Checking...</span>
                 </div>
                 
                 <!-- Login Form (shown when logged out) -->
@@ -728,13 +793,58 @@
             </div>
         </div>
         
-        <!-- Second Row -->
-        <div class="grid">
-            <!-- DM Management -->
-            <div class="card">
-                <div class="card-header">
-                    <div class="card-icon">💬</div>
-                    <h2>Direct Messages</h2>
+        <!-- Tab Navigation -->
+        <div class="tab-nav">
+            <button class="tab-btn active" onclick="showTab('setup')">
+                <span>⚙️</span> Setup
+            </button>
+            <button class="tab-btn" onclick="showTab('campaigns')">
+                <span>🚀</span> Campaigns
+            </button>
+            <button class="tab-btn" onclick="showTab('automation')">
+                <span>🤖</span> Automation
+            </button>
+            <button class="tab-btn" onclick="showTab('logs')">
+                <span>📋</span> Logs
+            </button>
+        </div>
+        
+        <!-- SETUP TAB -->
+        <div id="tab-setup" class="tab-content active">
+            <div class="card-grid">
+                <!-- Account Card -->
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-icon">🔐</div>
+                        <h2>Account</h2>
+                    </div>
+                    
+                    <div id="loginForm">
+                        <div class="form-group">
+                            <label>Instagram Username</label>
+                            <input type="text" id="loginUsername" placeholder="your_username">
+                        </div>
+                        <div class="form-group">
+                            <label>Password</label>
+                            <input type="password" id="loginPassword" placeholder="••••••••">
+                        </div>
+                        <div class="checkbox-group">
+                            <input type="checkbox" id="rememberMeCheckbox" checked>
+                            <label>Remember me for 7 days</label>
+                        </div>
+                        <button class="btn-success btn-full" onclick="login()">🔓 Login</button>
+                    </div>
+                    
+                    <div id="loggedInControls" class="hidden">
+                        <div class="status-message success">✅ Logged in successfully</div>
+                        <button class="btn-danger btn-full" onclick="logout()">🚪 Logout</button>
+                        <button class="btn-secondary btn-full" onclick="clearCookies()">🧹 Clear Cookies</button>
+                    </div>
+                    
+                    <div class="loading" id="loadingLogin">
+                        <div class="spinner"></div>
+                        <span>Connecting...</span>
+                    </div>
                 </div>
                 <button class="btn-primary" onclick="monitorDMs()">📬 Monitor & Auto-Reply</button>
                 <button class="btn-info" onclick="clearDMCache()">🗑️ Clear Reply Cache</button>
@@ -742,51 +852,228 @@
                     <span>📩 Send Manual DM</span>
                     <span class="arrow" id="sendDMSectionArrow">▼</span>
                 </div>
-                <div id="sendDMSection" class="collapsible-content">
+            </div>
+        </div>
+        
+        <!-- CAMPAIGNS TAB -->
+        <div id="tab-campaigns" class="tab-content">
+            <div class="card-grid">
+                <!-- Lead Generation -->
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-icon">⚡</div>
+                        <h2>Lead Generation</h2>
+                    </div>
+                    
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Targeting Mode</label>
+                            <select id="interactionMode" onchange="updateInteractionFields()">
+                                <option value="feed">Recent Feed</option>
+                                <option value="explore">Explore Page</option>
+                                <option value="hashtag">Hashtag Search</option>
+                                <option value="location">Location Search</option>
+                                <option value="user">Specific User</option>
+                                <option value="competitor_followers">Competitor Followers</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Max Posts</label>
+                            <input type="number" id="maxPostsInput" value="10" min="1" max="100">
+                        </div>
+                    </div>
+                    
+                    <div id="targetUsernameGroup" class="form-group hidden">
+                        <label>Target Username</label>
+                        <input type="text" id="interactionTarget" placeholder="username (no @)">
+                    </div>
+                    <div id="hashtagGroup" class="form-group hidden">
+                        <label>Hashtags (comma separated)</label>
+                        <input type="text" id="interactionHashtags" placeholder="restaurant, miami, food">
+                    </div>
+                    <div id="locationGroup" class="form-group hidden">
+                        <label>Location Path</label>
+                        <input type="text" id="locationPath" placeholder="212941492/miami-florida">
+                    </div>
+                    <div id="competitorGroup" class="form-group hidden">
+                        <label>Competitor Username</label>
+                        <input type="text" id="competitorUsername" placeholder="competitor_username">
+                    </div>
+                    
+                    <div class="collapsible-header" onclick="toggleCollapsible('advancedOptions')">
+                        <span>⚙️ Advanced Filters</span>
+                        <span class="arrow" id="advancedOptionsArrow">▼</span>
+                    </div>
+                    <div id="advancedOptions" class="collapsible-content">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Min Likes</label>
+                                <input type="number" id="minLikesInput" placeholder="50">
+                            </div>
+                            <div class="form-group">
+                                <label>Min Comments</label>
+                                <input type="number" id="minCommentsInput" placeholder="5">
+                            </div>
+                        </div>
+                        <div class="checkbox-group">
+                            <input type="checkbox" id="englishOnlyCheckbox" checked>
+                            <label>English captions only</label>
+                        </div>
+                    </div>
+                    
+                    <button class="btn-primary" onclick="startCommenting()">🚀 Start Campaign</button>
+                    <div class="loading" id="loading1">
+                        <div class="spinner"></div>
+                        <span>Running campaign...</span>
+                    </div>
+                </div>
+                
+                <!-- Story Engagement -->
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-icon">📺</div>
+                        <h2>Story Engagement</h2>
+                    </div>
+                    
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Stories to Watch</label>
+                            <input type="number" id="storyCount" value="10" min="1" max="50">
+                        </div>
+                        <div class="form-group">
+                            <label>Target User (optional)</label>
+                            <input type="text" id="storyTarget" placeholder="Leave empty for feed">
+                        </div>
+                    </div>
+                    
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Like %</label>
+                            <input type="number" id="storyLikeProbability" value="30" min="0" max="100">
+                        </div>
+                        <div class="form-group">
+                            <label>React %</label>
+                            <input type="number" id="storyReactionProbability" value="20" min="0" max="100">
+                        </div>
+                        <div class="form-group">
+                            <label>Emoji</label>
+                            <input type="text" id="storyReactionEmoji" value="🔥" maxlength="2">
+                        </div>
+                    </div>
+                    
+                    <div class="collapsible-header" onclick="toggleCollapsible('storyAdvanced')">
+                        <span>⚙️ Advanced Options</span>
+                        <span class="arrow" id="storyAdvancedArrow">▼</span>
+                    </div>
+                    <div id="storyAdvanced" class="collapsible-content">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Min Watch (sec)</label>
+                                <input type="number" id="storyMinWatch" value="5" min="2">
+                            </div>
+                            <div class="form-group">
+                                <label>Max Watch (sec)</label>
+                                <input type="number" id="storyMaxWatch" value="9" min="3">
+                            </div>
+                        </div>
+                        <div class="checkbox-group">
+                            <input type="checkbox" id="storyAiReplyEnabled">
+                            <label>Enable AI story replies</label>
+                        </div>
+                        <div id="storyAiOptions" class="hidden">
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label>Max AI Replies</label>
+                                    <input type="number" id="storyAiMaxReplies" value="3" min="1" max="20">
+                                </div>
+                                <div class="form-group">
+                                    <label>Reply Tone</label>
+                                    <select id="storyAiTone">
+                                        <option value="friendly">Friendly</option>
+                                        <option value="consultative">Consultative</option>
+                                        <option value="hype">High-energy</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label>Min Confidence %</label>
+                                <input type="number" id="storyAiConfidence" value="70" min="0" max="100">
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <button class="btn-primary" onclick="watchStories()">👁️ Watch Stories</button>
+                    <div class="loading" id="loadingStories">
+                        <div class="spinner"></div>
+                        <span>Watching stories...</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- AUTOMATION TAB -->
+        <div id="tab-automation" class="tab-content">
+            <div class="card-grid">
+                <!-- Direct Messages -->
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-icon">💬</div>
+                        <h2>Direct Messages</h2>
+                    </div>
+                    
                     <div class="form-group">
                         <label>Username</label>
                         <input type="text" id="dmUsername" placeholder="username (no @)">
                     </div>
                     <div class="form-group">
                         <label>Message</label>
-                        <textarea id="dmMessage" placeholder="Your message..."></textarea>
+                        <textarea id="dmMessage" placeholder="Your message here..."></textarea>
                     </div>
-                    <button class="btn-success" onclick="sendDM()">Send DM</button>
-                </div>
-                <div class="loading" id="loading2">
-                    <div class="spinner"></div>
-                    <span>Processing DMs...</span>
-                </div>
-            </div>
-            
-            <!-- Advanced Tools -->
-            <div class="card">
-                <div class="card-header">
-                    <div class="card-icon">🛠️</div>
-                    <h2>Tools</h2>
-                </div>
-                <button class="btn-info" onclick="viewLogs()">📋 View Recent Logs</button>
-                <button id="liveLogBtn" class="btn-success" onclick="toggleLiveLog()">▶️ Start Live Log</button>
-                <button class="btn-info" onclick="checkScheduler()">⏰ Scheduler Status</button>
-                <button class="btn-success" onclick="getMyProfile()">👤 My Profile Info</button>
-                <div class="collapsible mt-2" onclick="toggleCollapsible('scraperSection')">
-                    <span>👥 Follower Scraper</span>
-                    <span class="arrow" id="scraperSectionArrow">▼</span>
-                </div>
-                <div id="scraperSection" class="collapsible-content">
-                    <div class="form-group">
-                        <label>Target Account</label>
-                        <input type="text" id="targetAccount" placeholder="username">
+                    
+                    <button class="btn-primary" onclick="sendDM()">📩 Send DM</button>
+                    <button class="btn-info btn-full" onclick="monitorDMs()">📬 Monitor & Auto-Reply</button>
+                    
+                    <div class="loading" id="loading2">
+                        <div class="spinner"></div>
+                        <span>Processing...</span>
                     </div>
-                    <div class="form-group">
-                        <label>Max Followers</label>
-                        <input type="number" id="maxFollowers" value="50" min="1">
-                    </div>
-                    <button class="btn-info" onclick="scrapeFollowers()">Scrape Followers</button>
                 </div>
-                <div class="loading" id="loading4">
-                    <div class="spinner"></div>
-                    <span>Processing...</span>
+                
+                <!-- Tools & Scheduler -->
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-icon">🛠️</div>
+                        <h2>Tools</h2>
+                    </div>
+                    
+                    <div class="collapsible-header" onclick="toggleCollapsible('scraperTools')">
+                        <span>👥 Follower Scraper</span>
+                        <span class="arrow" id="scraperToolsArrow">▼</span>
+                    </div>
+                    <div id="scraperTools" class="collapsible-content">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Target Account</label>
+                                <input type="text" id="targetAccount" placeholder="competitor_username">
+                            </div>
+                            <div class="form-group">
+                                <label>Max Followers</label>
+                                <input type="number" id="maxFollowers" value="100" min="1" max="1000">
+                            </div>
+                        </div>
+                        <button class="btn-info" onclick="scrapeFollowers()">👥 Scrape Followers</button>
+                    </div>
+                    
+                    <div class="quick-actions mt-2">
+                        <button class="btn-secondary btn-sm" onclick="checkScheduler()">⏰ Scheduler</button>
+                        <button class="btn-secondary btn-sm" onclick="getMyProfile()">👤 Profile</button>
+                        <button class="btn-secondary btn-sm" onclick="checkStatus()">📊 Status</button>
+                    </div>
+                    
+                    <div class="loading" id="loading4">
+                        <div class="spinner"></div>
+                        <span>Processing...</span>
+                    </div>
                 </div>
             </div>
         </div>
@@ -814,8 +1101,8 @@
             </div>
         </div>
         
-        <!-- Logs and Screenshots Section -->
-        <div class="grid grid-2">
+        <!-- LOGS TAB -->
+        <div id="tab-logs" class="tab-content">
             <div class="card">
                 <div class="card-header">
                     <div class="card-icon">📜</div>
@@ -828,24 +1115,28 @@
                         <option value="important">Important Only</option>
                     </select>
                 </div>
+                
+                <div class="quick-actions">
+                    <button id="liveLogBtn" class="btn-success btn-sm" onclick="toggleLiveLog()">▶️ Start Live Log</button>
+                    <button class="btn-info btn-sm" onclick="viewLogs()">🔄 Refresh</button>
+                    <button class="btn-secondary btn-sm" onclick="loadScreenshots()">📸 Screenshots</button>
+                </div>
+                
                 <div class="log-container" id="logs">
-                    <!-- Logs will appear here with newest at top -->
+                    <div class="log-entry">Welcome to Instagram Bot Dashboard</div>
                 </div>
-            </div>
-            
-            <div class="card">
-                <div class="card-header">
-                    <div class="card-icon">📸</div>
-                    <h2>Screenshot Viewer</h2>
+                
+                <div class="collapsible-header mt-2" onclick="toggleCollapsible('screenshotGallery')">
+                    <span>📸 Recent Screenshots</span>
+                    <span class="arrow" id="screenshotGalleryArrow">▼</span>
                 </div>
-                <button class="btn-primary" onclick="loadScreenshots()">🔄 Refresh Screenshots</button>
-                <div id="screenshotGallery" style="margin-top: 15px; max-height: 400px; overflow-y: auto;">
-                    <p style="text-align: center; color: #6b7280;">Click refresh to load recent screenshots</p>
+                <div id="screenshotGallery" class="collapsible-content">
+                    <p style="text-align: center; color: #6b7280; padding: 20px;">Click "Screenshots" to load</p>
                 </div>
             </div>
         </div>
     </div>
-
+    
     <script>
         const API_URL = window.location.origin;
 
@@ -859,47 +1150,24 @@
                     credentials: 'include'
                 };
                 if (body) options.body = JSON.stringify(body);
-                
-                const response = await fetch(`${API_URL}${endpoint}`, options);
+                const response = await fetch(API_URL + endpoint, options);
                 return await response.json();
             } catch (error) {
-                console.error('API Error:', error);
                 return { error: error.message };
             }
         }
-
+        
+        // Log helper
         function addLog(message) {
             const logs = document.getElementById('logs');
-            const timestamp = new Date().toLocaleTimeString();
-            
-            // Determine log type based on message content for color coding
-            let logClass = '';
-            if (message.includes('✅') || message.includes('Success')) {
-                logClass = 'log-success';
-            } else if (message.includes('❌') || message.includes('Error') || message.includes('Failed')) {
-                logClass = 'log-error';
-            } else if (message.includes('⚠️') || message.includes('Warning')) {
-                logClass = 'log-warning';
-            } else if (message.includes('🚀') || message.includes('Starting')) {
-                logClass = 'log-info';
-            }
-            
-            // Create log entry and prepend (newest at top)
-            const logEntry = document.createElement('div');
-            logEntry.className = `log-entry ${logClass}`;
-            logEntry.textContent = `[${timestamp}] ${message}`;
-            
-            // Insert at the beginning instead of appending
-            if (logs.firstChild) {
-                logs.insertBefore(logEntry, logs.firstChild);
-            } else {
-                logs.appendChild(logEntry);
-            }
-            
-            // Keep only last 100 log entries to prevent memory issues
-            while (logs.children.length > 100) {
-                logs.removeChild(logs.lastChild);
-            }
+            const entry = document.createElement('div');
+            entry.className = 'log-entry';
+            if (message.includes('✅')) entry.classList.add('log-success');
+            else if (message.includes('❌')) entry.classList.add('log-error');
+            else if (message.includes('⚠️')) entry.classList.add('log-warning');
+            else if (message.includes('ℹ️') || message.includes('📡')) entry.classList.add('log-info');
+            entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            logs.insertBefore(entry, logs.firstChild);
         }
 
         function appendAiMessage(role, text) {
@@ -979,40 +1247,51 @@
 
         function updateInteractionFields() {
             const mode = document.getElementById('interactionMode').value;
-            document.getElementById('targetUsernameGroup').classList.toggle('hidden', mode !== 'user');
-            document.getElementById('hashtagGroup').classList.toggle('hidden', mode !== 'hashtag');
-            document.getElementById('locationGroup').classList.toggle('hidden', mode !== 'location');
-            document.getElementById('competitorGroup').classList.toggle('hidden', mode !== 'competitor_followers');
+            document.getElementById('targetUsernameGroup').classList.add('hidden');
+            document.getElementById('hashtagGroup').classList.add('hidden');
+            document.getElementById('locationGroup').classList.add('hidden');
+            document.getElementById('competitorGroup').classList.add('hidden');
+            
+            if (mode === 'user') document.getElementById('targetUsernameGroup').classList.remove('hidden');
+            else if (mode === 'hashtag') document.getElementById('hashtagGroup').classList.remove('hidden');
+            else if (mode === 'location') document.getElementById('locationGroup').classList.remove('hidden');
+            else if (mode === 'competitor_followers') document.getElementById('competitorGroup').classList.remove('hidden');
         }
-
+        
+        // Toggle proxy fields
+        function toggleProxyFields() {
+            const enabled = document.getElementById('proxyEnabled').checked;
+            document.getElementById('proxyFields').classList.toggle('hidden', !enabled);
+        }
+        
+        // Toggle story AI options
         function toggleStoryAiOptions() {
             const enabled = document.getElementById('storyAiReplyEnabled').checked;
             document.getElementById('storyAiOptions').classList.toggle('hidden', !enabled);
         }
-
+        
+        // Login
         async function login() {
+            const loading = document.getElementById('loadingLogin');
+            loading.classList.add('active');
+            
             const username = document.getElementById('loginUsername').value.trim();
             const password = document.getElementById('loginPassword').value;
             const rememberMe = document.getElementById('rememberMeCheckbox').checked;
             
             if (!username || !password) {
-                alert('Please enter both username and password');
+                alert('Please enter username and password');
+                loading.classList.remove('active');
                 return;
             }
-
-            const loading = document.getElementById('loadingLogin');
-            const statusDiv = document.getElementById('loginStatus');
-            loading.classList.add('active');
-            statusDiv.className = 'status-message info mt-2';
-            statusDiv.innerHTML = '⏳ Logging in...';
-            addLog(`🔐 Attempting login as @${username}...`);
             
+            if (rememberMe) localStorage.setItem('savedUsername', username);
+            
+            addLog('🔐 Logging in...');
             const result = await apiCall('/api/login', 'POST', { username, password, rememberMe });
             
             loading.classList.remove('active');
             if (result.error) {
-                statusDiv.className = 'status-message error mt-2';
-                statusDiv.innerHTML = `❌ ${result.error}`;
                 addLog('❌ Login failed: ' + result.error);
             } else {
                 statusDiv.className = 'status-message success mt-2';
@@ -1027,129 +1306,90 @@
                 checkStatus();
             }
         }
-
+        
+        // Logout
         async function logout() {
-            const loading = document.getElementById('loadingLogin');
-            const statusDiv = document.getElementById('loginStatus');
-            loading.classList.add('active');
             addLog('🚪 Logging out...');
-            
+            document.cookie = 'token=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/';
             await apiCall('/api/logout', 'POST');
-            
-            loading.classList.remove('active');
-            statusDiv.className = 'status-message info mt-2';
-            statusDiv.innerHTML = '🚪 Logged out';
-            addLog('✅ Logged out successfully');
+            addLog('✅ Logged out');
             checkStatus();
         }
-
+        
+        // Clear cookies
         async function clearCookies() {
-            const loading = document.getElementById('loadingLogin');
-            loading.classList.add('active');
             addLog('🧹 Clearing cookies...');
-            
-            await apiCall('/api/clear-cookies', 'DELETE');
-            
-            loading.classList.remove('active');
-            addLog('✅ Cookies cleared');
+            const result = await apiCall('/api/clear-cookies', 'DELETE');
+            addLog(result.error ? '❌ ' + result.error : '✅ Cookies cleared');
         }
-
-        // Proxy configuration functions
-        function toggleProxyFields() {
-            const enabled = document.getElementById('proxyEnabled').checked;
-            const fields = document.getElementById('proxyFields');
-            fields.classList.toggle('hidden', !enabled);
-        }
-
-        async function saveProxySettings() {
-            const enabled = document.getElementById('proxyEnabled').checked;
-            const host = document.getElementById('proxyHost').value.trim();
-            const port = document.getElementById('proxyPort').value.trim();
-            const username = document.getElementById('proxyUsername').value.trim();
-            const password = document.getElementById('proxyPassword').value.trim();
-            
-            if (enabled && (!host || !port)) {
-                alert('Please enter proxy host and port');
-                return;
-            }
-            
-            const loading = document.getElementById('loadingProxy');
-            const statusDiv = document.getElementById('proxyStatus');
-            loading.classList.remove('hidden');
-            statusDiv.classList.add('hidden');
-            addLog('🌐 Saving proxy settings...');
-            
-            const result = await apiCall('/api/proxy/configure', 'POST', {
-                enabled,
-                host,
-                port,
-                username,
-                password
-            });
-            
-            loading.classList.add('hidden');
-            statusDiv.classList.remove('hidden');
-            
-            if (result.error) {
-                statusDiv.className = 'status-message error mt-2';
-                statusDiv.innerHTML = `❌ ${result.error}`;
-                addLog('❌ Failed to save proxy settings: ' + result.error);
-            } else {
-                statusDiv.className = 'status-message success mt-2';
-                statusDiv.innerHTML = `✅ ${result.message}`;
-                addLog('✅ Proxy settings saved. Restart bot to apply changes.');
-                if (enabled) {
-                    addLog(`🌐 Proxy: ${host}:${port}`);
-                }
-            }
-        }
-
+        
+        // Load proxy settings
         async function loadProxySettings() {
             const result = await apiCall('/api/proxy/status');
-            if (result && !result.error) {
-                document.getElementById('proxyEnabled').checked = result.enabled || false;
+            if (result.enabled) {
+                document.getElementById('proxyEnabled').checked = true;
                 document.getElementById('proxyHost').value = result.host || '';
                 document.getElementById('proxyPort').value = result.port || '';
                 document.getElementById('proxyUsername').value = result.username || '';
                 toggleProxyFields();
+                updateProxyStatusPill(true);
             }
         }
-
+        
+        // Save proxy settings
+        async function saveProxySettings() {
+            const loading = document.getElementById('loadingProxy');
+            loading.classList.add('active');
+            
+            const enabled = document.getElementById('proxyEnabled').checked;
+            const host = document.getElementById('proxyHost').value.trim();
+            const port = document.getElementById('proxyPort').value.trim();
+            const username = document.getElementById('proxyUsername').value.trim();
+            const password = document.getElementById('proxyPassword').value;
+            
+            const result = await apiCall('/api/proxy/configure', 'POST', { enabled, host, port, username, password });
+            
+            loading.classList.remove('active');
+            if (result.error) {
+                addLog('❌ Proxy error: ' + result.error);
+            } else {
+                addLog('✅ Proxy settings saved');
+                updateProxyStatusPill(enabled);
+            }
+        }
+        
+        function updateProxyStatusPill(enabled) {
+            const pill = document.getElementById('proxyStatus');
+            if (enabled) {
+                pill.innerHTML = '<span>🌐</span><span>Proxy Active</span>';
+                pill.className = 'status-pill online';
+            } else {
+                pill.innerHTML = '<span>🌐</span><span>No Proxy</span>';
+                pill.className = 'status-pill';
+            }
+        }
+        
+        // Check status
         async function checkStatus() {
             const result = await apiCall('/api/status');
-            
-            const badge = document.getElementById('statusBadge');
+            const loginPill = document.getElementById('loginStatus');
             const loginForm = document.getElementById('loginForm');
             const loggedInControls = document.getElementById('loggedInControls');
-            const loginStatus = document.getElementById('loginStatus');
             
             if (result.authenticated) {
-                // Update badge
-                badge.className = 'status-badge online';
-                badge.innerHTML = '<div class="pulse"></div><span>Online</span>';
-                
-                // Hide login form, show logout controls
+                loginPill.className = 'status-pill online';
+                loginPill.innerHTML = '<div class="pulse"></div><span>@' + (result.username || 'Online') + '</span>';
                 loginForm.classList.add('hidden');
                 loggedInControls.classList.remove('hidden');
-                
-                // Update status message
-                loginStatus.className = 'status-message success mt-2';
-                loginStatus.innerHTML = `✅ Logged in${result.username ? ' as @' + result.username : ''}`;
             } else {
-                // Update badge
-                badge.className = 'status-badge offline';
-                badge.innerHTML = '<div class="pulse"></div><span>Offline</span>';
-                
-                // Show login form, hide logout controls
+                loginPill.className = 'status-pill offline';
+                loginPill.innerHTML = '<div class="pulse"></div><span>Offline</span>';
                 loginForm.classList.remove('hidden');
                 loggedInControls.classList.add('hidden');
-                
-                // Update status message
-                loginStatus.className = 'status-message error mt-2';
-                loginStatus.innerHTML = '❌ Not logged in';
             }
         }
-
+        
+        // Start commenting campaign
         async function startCommenting() {
             const loading = document.getElementById('loading1');
             loading.classList.add('active');
@@ -1163,63 +1403,42 @@
             const minLikes = parseInt(document.getElementById('minLikesInput').value, 10);
             const minComments = parseInt(document.getElementById('minCommentsInput').value, 10);
             const englishOnly = document.getElementById('englishOnlyCheckbox').checked;
-
+            
             const hashtags = hashtagInput.split(',').map(t => t.replace(/^#/, '').trim()).filter(Boolean);
-
+            
             let targetUsername = targetInput;
             if (mode === 'feed') targetUsername = 'feed';
             else if (mode === 'explore') targetUsername = 'explore';
             else if (mode === 'hashtag') {
-                if (!hashtags.length) {
-                    alert('Please enter at least one hashtag');
-                    loading.classList.remove('active');
-                    return;
-                }
+                if (!hashtags.length) { alert('Please enter at least one hashtag'); loading.classList.remove('active'); return; }
                 targetUsername = `#${hashtags[0]}`;
             } else if (mode === 'location') {
-                if (!locationPath) {
-                    alert('Please enter a location path');
-                    loading.classList.remove('active');
-                    return;
-                }
+                if (!locationPath) { alert('Please enter a location path'); loading.classList.remove('active'); return; }
                 targetUsername = `location:${locationPath}`;
             } else if (mode === 'competitor_followers') {
-                if (!competitorUsername) {
-                    alert('Please enter a competitor username');
-                    loading.classList.remove('active');
-                    return;
-                }
+                if (!competitorUsername) { alert('Please enter a competitor username'); loading.classList.remove('active'); return; }
                 targetUsername = undefined;
             }
-
+            
             const payload = {
-                targetUsername,
-                maxPosts,
-                mode,
+                targetUsername, maxPosts, mode,
                 options: {
                     mode,
                     hashtags: hashtags.length ? hashtags : undefined,
                     locationPath: locationPath || undefined,
                     competitorUsername: competitorUsername || undefined,
-                    engagement: {
-                        minLikes: isNaN(minLikes) ? undefined : minLikes,
-                        minComments: isNaN(minComments) ? undefined : minComments,
-                    },
-                    englishOnly: englishOnly || undefined,
-                },
+                    engagement: { minLikes: isNaN(minLikes) ? undefined : minLikes, minComments: isNaN(minComments) ? undefined : minComments },
+                    englishOnly: englishOnly || undefined
+                }
             };
-
+            
             addLog(`🚀 Starting ${mode} campaign (${maxPosts} posts)...`);
             const result = await apiCall('/api/interact', 'POST', payload);
-            
             loading.classList.remove('active');
-            if (result.error) {
-                addLog('❌ Error: ' + result.error);
-            } else {
-                addLog(`✅ ${result.message}`);
-            }
+            addLog(result.error ? '❌ Error: ' + result.error : '✅ ' + result.message);
         }
-
+        
+        // Watch stories
         async function watchStories() {
             const loading = document.getElementById('loadingStories');
             loading.classList.add('active');
@@ -1232,20 +1451,7 @@
             const minWatch = parseFloat(document.getElementById('storyMinWatch').value) * 1000 || 5000;
             const maxWatch = parseFloat(document.getElementById('storyMaxWatch').value) * 1000 || 9000;
             const aiEnabled = document.getElementById('storyAiReplyEnabled').checked;
-            const maxReplies = parseInt(document.getElementById('storyAiMaxReplies').value, 10);
-            const aiTone = document.getElementById('storyAiTone').value;
-            const aiConfidence = parseFloat(document.getElementById('storyAiConfidence').value);
             
-            let aiReplyOptions = null;
-            if (aiEnabled) {
-                aiReplyOptions = {
-                    enabled: true,
-                    maxReplies: isNaN(maxReplies) ? undefined : maxReplies,
-                    tone: aiTone || 'friendly',
-                    minConfidence: isNaN(aiConfidence) ? undefined : aiConfidence / 100,
-                };
-            }
-
             const payload = {
                 storyCount: count,
                 targetUsername: target || undefined,
@@ -1253,61 +1459,54 @@
                 reactionProbability: reactProb,
                 reactionEmoji: emoji,
                 minWatchTimeMs: minWatch,
-                maxWatchTimeMs: maxWatch,
+                maxWatchTimeMs: maxWatch
             };
-            if (aiReplyOptions) {
-                payload.aiReply = aiReplyOptions;
+            
+            if (aiEnabled) {
+                payload.aiReply = {
+                    enabled: true,
+                    maxReplies: parseInt(document.getElementById('storyAiMaxReplies').value, 10),
+                    tone: document.getElementById('storyAiTone').value,
+                    minConfidence: parseFloat(document.getElementById('storyAiConfidence').value) / 100
+                };
             }
-
+            
             addLog(`👁️ Watching ${count} stories...`);
             const result = await apiCall('/api/stories/watch', 'POST', payload);
-            
             loading.classList.remove('active');
-            if (result.error) {
-                addLog('❌ Error: ' + result.error);
-            } else {
-                addLog('✅ ' + result.message);
-            }
+            addLog(result.error ? '❌ Error: ' + result.error : '✅ ' + result.message);
         }
-
+        
+        // Send DM
         async function sendDM() {
             const username = document.getElementById('dmUsername').value.trim();
             const message = document.getElementById('dmMessage').value.trim();
+            if (!username || !message) { alert('Please fill in both username and message'); return; }
             
-            if (!username || !message) {
-                alert('Please fill in both username and message');
-                return;
-            }
-
             const loading = document.getElementById('loading2');
             loading.classList.add('active');
             addLog(`📩 Sending DM to @${username}...`);
             
             const result = await apiCall('/api/dm', 'POST', { username, message });
-            
             loading.classList.remove('active');
+            
             if (result.error) {
                 addLog('❌ Error: ' + result.error);
             } else {
-                addLog(`✅ DM sent to @${username}`);
+                addLog('✅ DM sent to @' + username);
                 document.getElementById('dmUsername').value = '';
                 document.getElementById('dmMessage').value = '';
             }
         }
-
+        
+        // Monitor DMs
         async function monitorDMs() {
             const loading = document.getElementById('loading2');
             loading.classList.add('active');
-            addLog('📬 Monitoring DMs and auto-replying...');
-            
+            addLog('📬 Monitoring DMs...');
             const result = await apiCall('/api/monitor-dms', 'POST');
-            
             loading.classList.remove('active');
-            if (result.error) {
-                addLog('❌ Error: ' + result.error);
-            } else {
-                addLog('✅ ' + result.message);
-            }
+            addLog(result.error ? '❌ Error: ' + result.error : '✅ ' + result.message);
         }
         
         async function clearDMCache() {
@@ -1328,114 +1527,69 @@
         async function scrapeFollowers() {
             const targetAccount = document.getElementById('targetAccount').value.trim();
             const maxFollowers = parseInt(document.getElementById('maxFollowers').value);
+            if (!targetAccount) { alert('Please enter a target account'); return; }
             
-            if (!targetAccount) {
-                alert('Please enter a target account');
-                return;
-            }
-
             const loading = document.getElementById('loading4');
             loading.classList.add('active');
             addLog(`👥 Scraping followers from @${targetAccount}...`);
             
             const result = await apiCall('/api/scrape-followers', 'POST', { targetAccount, maxFollowers });
-            
             loading.classList.remove('active');
-            if (result.error) {
-                addLog('❌ Error: ' + result.error);
-            } else {
-                addLog(`✅ Scraped ${result.followers?.length || 0} followers`);
-            }
+            addLog(result.error ? '❌ Error: ' + result.error : `✅ Scraped ${result.followers?.length || 0} followers`);
         }
-
+        
+        // Check scheduler
         async function checkScheduler() {
             const loading = document.getElementById('loading4');
             loading.classList.add('active');
-            addLog('⏰ Checking scheduler...');
-            
             const result = await apiCall('/api/scheduler/status');
-            
             loading.classList.remove('active');
-            if (result.error) {
-                addLog('❌ Error: ' + result.error);
-            } else {
-                addLog(`⏰ Scheduler: ${result.isRunning ? 'Running ✅' : 'Stopped ❌'}`);
-            }
+            addLog(result.error ? '❌ ' + result.error : `⏰ Scheduler: ${result.isRunning ? 'Running ✅' : 'Stopped ❌'}`);
         }
-
+        
+        // Get profile
         async function getMyProfile() {
             const loading = document.getElementById('loading4');
             loading.classList.add('active');
-            addLog('👤 Fetching profile...');
-            
             const result = await apiCall('/api/me');
-            
             loading.classList.remove('active');
-            if (result.error) {
-                addLog('❌ Error: ' + result.error);
-            } else {
-                addLog(`👤 Username: ${result.username || 'Unknown'}`);
-            }
+            addLog(result.error ? '❌ ' + result.error : `👤 Username: ${result.username || 'Unknown'}`);
         }
-
-        let logRefreshInterval = null;
         
+        // Load screenshots
         async function loadScreenshots() {
             const gallery = document.getElementById('screenshotGallery');
-            gallery.innerHTML = '<p style="text-align: center; color: #667eea;">Loading screenshots...</p>';
+            gallery.innerHTML = '<p style="text-align: center; padding: 20px;">Loading...</p>';
+            toggleCollapsible('screenshotGallery');
             
             const result = await apiCall('/api/screenshots/list');
             
-            if (result.error || !result.screenshots) {
-                gallery.innerHTML = '<p style="text-align: center; color: #ef4444;">Error loading screenshots</p>';
-                return;
-            }
-            
-            if (result.screenshots.length === 0) {
-                gallery.innerHTML = '<p style="text-align: center; color: #6b7280;">No screenshots found</p>';
+            if (result.error || !result.screenshots || result.screenshots.length === 0) {
+                gallery.innerHTML = '<p style="text-align: center; color: #6b7280; padding: 20px;">No screenshots found</p>';
                 return;
             }
             
             gallery.innerHTML = '';
-            result.screenshots.forEach(screenshot => {
+            result.screenshots.slice(0, 10).forEach(s => {
                 const item = document.createElement('div');
-                item.style.cssText = 'margin-bottom: 15px; padding: 10px; background: #f9fafb; border-radius: 8px; cursor: pointer;';
-                item.onclick = () => viewScreenshot(screenshot.type, screenshot.path);
-                
-                const typeEmoji = screenshot.type === 'post' ? '📄' : 
-                                 screenshot.type === 'profile' ? '👤' :
-                                 screenshot.type === 'dm' ? '💬' : '📰';
-                
-                const date = new Date(screenshot.timestamp).toLocaleString();
-                
-                item.innerHTML = `
-                    <div style="display: flex; align-items: center; gap: 10px;">
-                        <span style="font-size: 24px;">${typeEmoji}</span>
-                        <div style="flex: 1;">
-                            <div style="font-weight: 600; color: #1f2937;">${screenshot.type.toUpperCase()}</div>
-                            <div style="font-size: 12px; color: #6b7280;">${date}</div>
-                            <div style="font-size: 11px; color: #9ca3af;">${screenshot.name}</div>
-                        </div>
-                        <span style="color: #667eea;">👁️</span>
-                    </div>
-                `;
-                
+                item.style.cssText = 'padding: 8px; margin: 4px 0; background: #f9fafb; border-radius: 6px; cursor: pointer; display: flex; align-items: center; gap: 8px;';
+                item.onclick = () => window.open(`${API_URL}/api/screenshots/view/${s.type}/${s.path}`, '_blank');
+                item.innerHTML = `<span>${s.type === 'post' ? '📄' : s.type === 'profile' ? '👤' : '📰'}</span><span style="flex:1; font-size: 12px;">${s.name}</span><span style="color: #667eea;">👁️</span>`;
                 gallery.appendChild(item);
             });
-            
-            addLog(`✅ Loaded ${result.screenshots.length} screenshots`);
         }
         
-        function viewScreenshot(type, filename) {
-            const url = `${API_URL}/api/screenshots/view/${type}/${filename}`;
-            window.open(url, '_blank', 'width=800,height=600');
-        }
-        
+        // View logs
+        let logRefreshInterval = null;
         async function viewLogs() {
             const result = await apiCall('/api/logs/recent?lines=1000'); // Increased from 500 to 1000
             
-            if (result.error) {
-                console.error('Error fetching logs:', result.error);
+            const logs = document.getElementById('logs');
+            logs.innerHTML = '';
+            
+            const lines = result.logs || [];
+            if (lines.length === 0) {
+                logs.innerHTML = '<div class="log-entry">No log entries available.</div>';
                 return;
             }
             
@@ -1461,7 +1615,11 @@
             if (lines.length === 0) {
                 const entry = document.createElement('div');
                 entry.className = 'log-entry';
-                entry.textContent = 'No log entries available.';
+                if (line.includes('✅') || line.includes('Successfully')) entry.classList.add('log-success');
+                else if (line.includes('❌') || line.includes('error:')) entry.classList.add('log-error');
+                else if (line.includes('⚠️') || line.includes('warn:')) entry.classList.add('log-warning');
+                else if (line.includes('info:')) entry.classList.add('log-info');
+                entry.textContent = line;
                 logs.appendChild(entry);
             } else {
                 // Show newest first (reverse the array)
@@ -1512,13 +1670,10 @@
         function toggleLiveLog() {
             const btn = document.getElementById('liveLogBtn');
             if (logRefreshInterval) {
-                // Stop live refresh
                 clearInterval(logRefreshInterval);
                 logRefreshInterval = null;
                 btn.textContent = '▶️ Start Live Log';
-                btn.classList.remove('btn-danger');
-                btn.classList.add('btn-success');
-                addLog('⏸️ Live log stopped');
+                btn.className = 'btn-success btn-sm';
             } else {
                 // Start live refresh
                 viewLogs(); // Fetch immediately
@@ -1529,11 +1684,8 @@
                 addLog('▶️ Live log started (updates every 2s)');
             }
         }
-
-        // Auto-refresh status every 30 seconds
-        setInterval(checkStatus, 30000);
-
-        // Initialize on load
+        
+        // Initialize
         window.onload = () => {
             checkStatus();
             updateInteractionFields();
@@ -1548,13 +1700,9 @@
             }
             loadProxySettings();
             
-            // Auto-fill username if saved
             const savedUsername = localStorage.getItem('savedUsername');
-            if (savedUsername) {
-                document.getElementById('loginUsername').value = savedUsername;
-            }
+            if (savedUsername) document.getElementById('loginUsername').value = savedUsername;
             
-            // Add toggle listeners
             document.getElementById('proxyEnabled').addEventListener('change', toggleProxyFields);
             document.getElementById('storyAiReplyEnabled').addEventListener('change', toggleStoryAiOptions);
             toggleStoryAiOptions();
@@ -1569,9 +1717,10 @@
                 });
             }
             
-            addLog('🤖 Dashboard loaded - Marketing Team App');
-            addLog('💡 Ready to generate leads!');
+            addLog('🤖 Dashboard loaded');
         };
+        
+        setInterval(checkStatus, 30000);
     </script>
 </body>
 </html>
