@@ -259,6 +259,21 @@
             border-color: var(--danger);
             color: var(--danger);
         }
+
+        /* System Overview pills */
+        .pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 12px;
+            border-radius: 999px;
+            border: 1px solid var(--border);
+            background: #f9fafb;
+            color: #111827;
+            font-size: 12px;
+            font-weight: 600;
+            white-space: nowrap;
+        }
         
         .pulse {
             width: 10px;
@@ -704,6 +719,14 @@
                 <span>Checking...</span>
             </div>
         </div>
+        <div id="systemOverview" style="display:flex;flex-wrap:wrap;gap:8px;margin:10px 0 16px 0;">
+            <span class="pill" id="pillServerTime">⏱️ Server: …</span>
+            <span class="pill" id="pillUptime">🧠 Uptime: …</span>
+            <span class="pill" id="pillDb">🗄️ DB: …</span>
+            <span class="pill" id="pillProxy">🌐 Proxy: …</span>
+            <span class="pill" id="pillAi">🤖 Gemini: …</span>
+            <span class="pill" id="pillAuth">🔐 Dashboard: …</span>
+        </div>
         
         <!-- Main Grid -->
         <div class="grid">
@@ -1008,6 +1031,11 @@
                     <button class="btn-primary" onclick="showCreateTaskModal()">➕ Create Scheduled Task</button>
                     <button class="btn-info" onclick="loadScheduledTasks()">🔄 Refresh</button>
                 </div>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;margin: 0 0 12px 0;">
+                    <button class="btn-secondary" style="width:auto;padding:8px 10px;font-size:12px;" onclick="showCreateTaskModal({ preset: 'hourly_stories' })">⚡ Hourly Stories</button>
+                    <button class="btn-secondary" style="width:auto;padding:8px 10px;font-size:12px;" onclick="showCreateTaskModal({ preset: 'hourly_campaign' })">⚡ Hourly Campaign</button>
+                    <button class="btn-secondary" style="width:auto;padding:8px 10px;font-size:12px;" onclick="showCreateTaskModal({ preset: 'dm_15m' })">⚡ DM Monitor (15m)</button>
+                </div>
                 <div id="scheduledTasksList" style="max-height: 400px; overflow-y: auto;">
                     <p style="text-align: center; color: #6b7280;">Loading scheduled tasks...</p>
                 </div>
@@ -1106,6 +1134,30 @@
 
         const aiChatHistory = [];
         let schedulerLoaded = false;
+        let systemOverviewInterval = null;
+
+        // Lightweight status pills (no heavy UI framework required)
+        function setPill(id, text, variant = 'neutral') {
+            const el = document.getElementById(id);
+            if (!el) return;
+            el.textContent = text;
+            el.style.borderColor = '#e5e7eb';
+            el.style.background = '#f9fafb';
+            el.style.color = '#111827';
+            if (variant === 'ok') {
+                el.style.borderColor = '#bbf7d0';
+                el.style.background = '#f0fdf4';
+                el.style.color = '#166534';
+            } else if (variant === 'warn') {
+                el.style.borderColor = '#fde68a';
+                el.style.background = '#fffbeb';
+                el.style.color = '#92400e';
+            } else if (variant === 'bad') {
+                el.style.borderColor = '#fecaca';
+                el.style.background = '#fef2f2';
+                el.style.color = '#991b1b';
+            }
+        }
 
         async function apiCall(endpoint, method = 'GET', body = null) {
             try {
@@ -1922,6 +1974,10 @@
             startLocalClock();
             setInterval(refreshServerTime, 15000);
             refreshRightRail();
+            refreshSystemOverview();
+            if (!systemOverviewInterval) {
+                systemOverviewInterval = setInterval(refreshSystemOverview, 15000);
+            }
 
             // Keep the right rail fresh (lightweight)
             setInterval(refreshRightRail, 8000);
@@ -1975,7 +2031,7 @@
             }).join('');
         }
         
-        function showCreateTaskModal() {
+        function showCreateTaskModal(options = {}) {
             const modal = document.createElement('div');
             modal.id = 'taskModal';
             modal.style.cssText = 'position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 1000; display: flex; align-items: center; justify-content: center;';
@@ -1998,9 +2054,13 @@
                             </select>
                         </div>
                         <div class="form-group">
-                            <label>Schedule Type *</label>
-                            <select id="scheduleType" onchange="toggleScheduleFields()" required>
-                                <option value="once" selected>Date/Time (run once)</option>
+                            <label>Schedule *</label>
+                            <select id="scheduleMode" onchange="toggleScheduleMode()" required>
+                                <option value="once" selected>Run once (pick date & time)</option>
+                                <option value="every_minutes">Repeat every X minutes</option>
+                                <option value="hourly">Repeat hourly</option>
+                                <option value="every_hours">Repeat every X hours</option>
+                                <option value="daily">Repeat daily at a time</option>
                                 <option value="cron">Cron (advanced)</option>
                             </select>
                         </div>
@@ -2011,6 +2071,46 @@
                                 Tip: compare with the <strong>Server Time</strong> bar on the scheduler card to avoid timezone confusion.
                             </small>
                         </div>
+                        <div class="form-group hidden" id="everyMinutesGroup">
+                            <label>Every (minutes) *</label>
+                            <select id="everyMinutes">
+                                <option value="5">Every 5 minutes</option>
+                                <option value="10">Every 10 minutes</option>
+                                <option value="15" selected>Every 15 minutes</option>
+                                <option value="30">Every 30 minutes</option>
+                            </select>
+                        </div>
+                        <div class="form-group hidden" id="hourlyGroup">
+                            <label>Minute of hour *</label>
+                            <select id="hourlyMinute">
+                                <option value="0" selected>at :00</option>
+                                <option value="5">at :05</option>
+                                <option value="10">at :10</option>
+                                <option value="15">at :15</option>
+                                <option value="30">at :30</option>
+                                <option value="45">at :45</option>
+                            </select>
+                        </div>
+                        <div class="form-group hidden" id="everyHoursGroup">
+                            <label>Every (hours) *</label>
+                            <select id="everyHours">
+                                <option value="2" selected>Every 2 hours</option>
+                                <option value="3">Every 3 hours</option>
+                                <option value="4">Every 4 hours</option>
+                                <option value="6">Every 6 hours</option>
+                                <option value="12">Every 12 hours</option>
+                            </select>
+                            <small style="display:block;color:#6b7280;margin-top:4px;">
+                                Uses your selected timezone below.
+                            </small>
+                        </div>
+                        <div class="form-group hidden" id="dailyGroup">
+                            <label>Daily at (time) *</label>
+                            <input type="time" id="dailyTime" value="09:00">
+                            <small style="display:block;color:#6b7280;margin-top:4px;">
+                                Uses your selected timezone below.
+                            </small>
+                        </div>
                         <div class="form-group hidden" id="cronGroup">
                             <label>Cron Expression *</label>
                             <input type="text" id="cronExpression" placeholder="0 9 * * * (9 AM daily)">
@@ -2019,9 +2119,14 @@
                                 Examples: "0 9 * * *" (9 AM daily), "0 */6 * * *" (every 6 hours), "0 9 * * 1" (9 AM Mondays)
                             </small>
                         </div>
+                        <div style="margin-top: -8px; margin-bottom: 14px;">
+                            <small id="schedulePreview" style="display:block;color:#6b7280;">
+                                Preview: —
+                            </small>
+                        </div>
                         <div class="form-group">
                             <label>Timezone</label>
-                            <select id="taskTimezone">
+                            <select id="taskTimezone" onchange="updateSchedulePreview()">
                                 <option value="America/New_York">Eastern Time (ET)</option>
                                 <option value="America/Chicago">Central Time (CT)</option>
                                 <option value="America/Denver">Mountain Time (MT)</option>
@@ -2043,27 +2148,124 @@
             `;
             document.body.appendChild(modal);
             updateTaskConfig();
-            toggleScheduleFields();
+            toggleScheduleMode();
+
+            // Optional presets to make "autonomous" setup 1-click
+            const preset = options?.preset;
+            if (preset) {
+                const setVal = (id, v) => {
+                    const el = document.getElementById(id);
+                    if (el) el.value = v;
+                };
+                if (preset === 'hourly_stories') {
+                    setVal('taskName', 'Autopilot: Hourly Stories');
+                    setVal('taskType', 'stories');
+                    updateTaskConfig();
+                    setVal('scheduleMode', 'hourly');
+                    toggleScheduleMode();
+                    setVal('hourlyMinute', '0');
+                    setVal('configStoryCount', '10');
+                    updateSchedulePreview();
+                } else if (preset === 'hourly_campaign') {
+                    setVal('taskName', 'Autopilot: Hourly Campaign');
+                    setVal('taskType', 'campaign');
+                    updateTaskConfig();
+                    setVal('scheduleMode', 'hourly');
+                    toggleScheduleMode();
+                    setVal('hourlyMinute', '5');
+                    setVal('configMaxPosts', '6');
+                    updateSchedulePreview();
+                } else if (preset === 'dm_15m') {
+                    setVal('taskName', 'Autopilot: DM Monitor (15m)');
+                    setVal('taskType', 'dm_monitor');
+                    updateTaskConfig();
+                    setVal('scheduleMode', 'every_minutes');
+                    toggleScheduleMode();
+                    setVal('everyMinutes', '15');
+                    updateSchedulePreview();
+                }
+            }
         }
 
-        function toggleScheduleFields() {
-            const scheduleType = document.getElementById('scheduleType')?.value || 'once';
+        function toggleScheduleMode() {
+            const mode = document.getElementById('scheduleMode')?.value || 'once';
             const runAtGroup = document.getElementById('runAtGroup');
+            const everyMinutesGroup = document.getElementById('everyMinutesGroup');
+            const hourlyGroup = document.getElementById('hourlyGroup');
+            const everyHoursGroup = document.getElementById('everyHoursGroup');
+            const dailyGroup = document.getElementById('dailyGroup');
             const cronGroup = document.getElementById('cronGroup');
+
             const runAt = document.getElementById('runAt');
             const cron = document.getElementById('cronExpression');
 
-            if (scheduleType === 'cron') {
-                runAtGroup?.classList.add('hidden');
-                cronGroup?.classList.remove('hidden');
-                if (runAt) runAt.required = false;
-                if (cron) cron.required = true;
-            } else {
+            // Hide all
+            runAtGroup?.classList.add('hidden');
+            everyMinutesGroup?.classList.add('hidden');
+            hourlyGroup?.classList.add('hidden');
+            everyHoursGroup?.classList.add('hidden');
+            dailyGroup?.classList.add('hidden');
+            cronGroup?.classList.add('hidden');
+
+            if (runAt) runAt.required = false;
+            if (cron) cron.required = false;
+
+            if (mode === 'once') {
                 runAtGroup?.classList.remove('hidden');
-                cronGroup?.classList.add('hidden');
                 if (runAt) runAt.required = true;
-                if (cron) cron.required = false;
+            } else if (mode === 'every_minutes') {
+                everyMinutesGroup?.classList.remove('hidden');
+            } else if (mode === 'hourly') {
+                hourlyGroup?.classList.remove('hidden');
+            } else if (mode === 'every_hours') {
+                everyHoursGroup?.classList.remove('hidden');
+            } else if (mode === 'daily') {
+                dailyGroup?.classList.remove('hidden');
+            } else if (mode === 'cron') {
+                cronGroup?.classList.remove('hidden');
+                if (cron) cron.required = true;
             }
+
+            updateSchedulePreview();
+        }
+
+        function updateSchedulePreview() {
+            const el = document.getElementById('schedulePreview');
+            if (!el) return;
+            const mode = document.getElementById('scheduleMode')?.value || 'once';
+            const tz = document.getElementById('taskTimezone')?.value || 'America/New_York';
+
+            if (mode === 'once') {
+                el.textContent = `Preview: runs once at selected date/time (your local time)`;
+                return;
+            }
+            if (mode === 'every_minutes') {
+                const n = parseInt(document.getElementById('everyMinutes')?.value || '15', 10);
+                el.textContent = `Preview: repeats every ${n} minutes (cron: */${n} * * * *)`;
+                return;
+            }
+            if (mode === 'hourly') {
+                const m = parseInt(document.getElementById('hourlyMinute')?.value || '0', 10);
+                el.textContent = `Preview: repeats hourly at :${String(m).padStart(2, '0')} (cron: ${m} * * * *)`;
+                return;
+            }
+            if (mode === 'every_hours') {
+                const h = parseInt(document.getElementById('everyHours')?.value || '2', 10);
+                el.textContent = `Preview: repeats every ${h} hours (cron: 0 */${h} * * *) [tz: ${tz}]`;
+                return;
+            }
+            if (mode === 'daily') {
+                const t = document.getElementById('dailyTime')?.value || '09:00';
+                const [hh, mm] = t.split(':').map(x => parseInt(x, 10));
+                el.textContent = `Preview: repeats daily at ${t} (cron: ${mm || 0} ${hh || 0} * * *) [tz: ${tz}]`;
+                return;
+            }
+            if (mode === 'cron') {
+                const expr = document.getElementById('cronExpression')?.value || '—';
+                el.textContent = `Preview: cron = ${expr} [tz: ${tz}]`;
+                return;
+            }
+            el.textContent = 'Preview: —';
         }
         
         function updateTaskConfig() {
@@ -2157,16 +2359,41 @@
                 config.maxFollowers = parseInt(document.getElementById('configMaxFollowers').value) || 50;
             }
             
-            const scheduleType = document.getElementById('scheduleType').value;
-            const runAtVal = document.getElementById('runAt').value;
+            const mode = document.getElementById('scheduleMode').value;
+            const runAtVal = document.getElementById('runAt')?.value;
+            const tz = document.getElementById('taskTimezone').value;
+
+            let scheduleType = 'cron';
+            let cronExpression = undefined;
+            let runAt = undefined;
+
+            if (mode === 'once') {
+                scheduleType = 'once';
+                runAt = runAtVal ? new Date(runAtVal).toISOString() : undefined;
+            } else if (mode === 'every_minutes') {
+                const n = parseInt(document.getElementById('everyMinutes').value, 10) || 15;
+                cronExpression = `*/${n} * * * *`;
+            } else if (mode === 'hourly') {
+                const m = parseInt(document.getElementById('hourlyMinute').value, 10) || 0;
+                cronExpression = `${m} * * * *`;
+            } else if (mode === 'every_hours') {
+                const h = parseInt(document.getElementById('everyHours').value, 10) || 2;
+                cronExpression = `0 */${h} * * *`;
+            } else if (mode === 'daily') {
+                const t = document.getElementById('dailyTime').value || '09:00';
+                const [hh, mm] = t.split(':').map(x => parseInt(x, 10));
+                cronExpression = `${mm || 0} ${hh || 0} * * *`;
+            } else if (mode === 'cron') {
+                cronExpression = document.getElementById('cronExpression').value;
+            }
 
             const payload = {
                 name: document.getElementById('taskName').value,
                 taskType: taskType,
                 scheduleType,
-                cronExpression: scheduleType === 'cron' ? document.getElementById('cronExpression').value : undefined,
-                runAt: scheduleType === 'once' ? (runAtVal ? new Date(runAtVal).toISOString() : undefined) : undefined,
-                timezone: document.getElementById('taskTimezone').value,
+                cronExpression,
+                runAt,
+                timezone: tz,
                 config: config,
                 enabled: document.getElementById('taskEnabled').checked
             };
@@ -2219,6 +2446,50 @@
             } else {
                 serverTimeEl.textContent = 'Unavailable';
                 serverTzEl.textContent = '—';
+            }
+        }
+
+        async function refreshSystemOverview() {
+            try {
+                const [timeRes, statusRes, proxyRes, aiRes] = await Promise.all([
+                    apiCall('/api/time'),
+                    apiCall('/api/status'),
+                    apiCall('/api/proxy/status'),
+                    apiCall('/api/ai/status'),
+                ]);
+
+                if (timeRes?.serverTimeIso) {
+                    const dt = new Date(timeRes.serverTimeIso);
+                    const tz = timeRes.serverTimezone || 'UTC';
+                    setPill('pillServerTime', `⏱️ Server: ${isNaN(dt.getTime()) ? String(timeRes.serverTimeIso) : dt.toLocaleTimeString()} (${tz})`, 'neutral');
+                    setPill('pillUptime', `🧠 Uptime: ${timeRes.uptimeSec ?? '?'}s`, 'neutral');
+                } else {
+                    setPill('pillServerTime', '⏱️ Server: unknown', 'warn');
+                    setPill('pillUptime', '🧠 Uptime: unknown', 'warn');
+                }
+
+                if (statusRes && !statusRes.error) {
+                    setPill('pillDb', `🗄️ DB: ${statusRes.dbConnected ? 'connected' : 'offline'}`, statusRes.dbConnected ? 'ok' : 'bad');
+                    setPill('pillAuth', `🔐 Dashboard: ${statusRes.authenticated ? 'logged in' : 'logged out'}`, statusRes.authenticated ? 'ok' : 'warn');
+                } else {
+                    setPill('pillDb', '🗄️ DB: unknown', 'warn');
+                    setPill('pillAuth', '🔐 Dashboard: unknown', 'warn');
+                }
+
+                if (proxyRes && !proxyRes.error) {
+                    setPill('pillProxy', `🌐 Proxy: ${proxyRes.enabled ? 'enabled' : 'off'}`, proxyRes.enabled ? 'ok' : 'neutral');
+                } else {
+                    setPill('pillProxy', '🌐 Proxy: unknown', 'warn');
+                }
+
+                if (aiRes && !aiRes.error) {
+                    const configured = !!aiRes.configured;
+                    setPill('pillAi', `🤖 Gemini: ${configured ? `configured (${aiRes.keysConfigured})` : 'not set'}`, configured ? 'ok' : 'bad');
+                } else {
+                    setPill('pillAi', '🤖 Gemini: unknown', 'warn');
+                }
+            } catch {
+                // ignore
             }
         }
 

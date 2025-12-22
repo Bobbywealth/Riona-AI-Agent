@@ -333,6 +333,23 @@ router.get('/time', async (_req: Request, res: Response) => {
   });
 });
 
+// AI status endpoint (no secrets)
+router.get('/ai/status', async (_req: Request, res: Response) => {
+  const maxKeys = 50;
+  let configuredKeys = 0;
+  for (let i = 1; i <= maxKeys; i++) {
+    const val = (process.env[`GEMINI_API_KEY_${i}`] || '').trim();
+    if (!val) continue;
+    // Ignore placeholder defaults like "API_KEY_1"
+    if (/^API_KEY_\d+$/i.test(val)) continue;
+    configuredKeys++;
+  }
+  return res.json({
+    configured: configuredKeys > 0,
+    keysConfigured: configuredKeys,
+  });
+});
+
 // Session refresh endpoint
 router.post('/session/refresh', requireAuth, async (req: Request, res: Response) => {
   try {
