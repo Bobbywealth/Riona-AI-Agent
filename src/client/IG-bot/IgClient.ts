@@ -139,6 +139,20 @@ export class IgClient {
     private sessionRefreshInterval: NodeJS.Timeout | null = null;
     private lastSessionRefresh: Date | null = null;
 
+    private async logStep(runId: string | undefined | null, step: string, details: Record<string, any> = {}) {
+        try {
+            const prefix = runId ? `[run:${runId}] ` : '';
+            const url = this.page ? this.page.url() : '';
+            const detailPairs = Object.entries(details)
+                .filter(([, v]) => v !== undefined && v !== null && String(v).trim().length)
+                .map(([k, v]) => `${k}=${String(v).replace(/\s+/g, ' ').trim()}`);
+            const detailText = detailPairs.length ? ` | ${detailPairs.join(' | ')}` : '';
+            logger.info(`${prefix}🧭 ${step}${url ? ` | url=${url}` : ''}${detailText}`);
+        } catch {
+            // ignore
+        }
+    }
+
     private step(runId: string | undefined, message: string, meta?: any) {
         const prefix = runId ? `[run:${runId}] ` : '';
         const extra = meta ? ` ${JSON.stringify(meta)}` : '';
@@ -730,6 +744,7 @@ export class IgClient {
         
         try {
             logger.info(`${prefix}: starting (maxConversations=${maxConversations})`);
+            await this.logStep(runId, 'DM: goto inbox', { maxConversations });
             
             // Navigate to DMs page
             await page.goto("https://www.instagram.com/direct/inbox/", {
@@ -766,6 +781,7 @@ export class IgClient {
                 for (let index = 0; index < conversationItems.length && processed < maxConversations; index++) {
                 try {
                     logger.info(`${prefix}: checking conversation (${processed + 1}/${maxConversations}, row=${offset + index + 1})`);
+                    await this.logStep(runId, 'DM: open conversation', { row: offset + index + 1 });
                     
                     // Go back to inbox before clicking next conversation
                     if (processed > 0) {
@@ -783,9 +799,11 @@ export class IgClient {
                             console.log(`Conversation row ${offset + index + 1} no longer available`);
                             continue;
                         }
+                        await this.logStep(runId, 'DM: click conversation row', { row: offset + index + 1 });
                         await freshItems[index].click();
                     } else {
                         // First conversation - just click it
+                        await this.logStep(runId, 'DM: click conversation row', { row: offset + index + 1 });
                         await conversationItems[index].click();
                     }
                     
@@ -825,6 +843,7 @@ export class IgClient {
                     });
                     const conversationTitle = conversationMeta?.title || 'conversation';
                     const peerUsername = conversationMeta?.peerUsername ? String(conversationMeta.peerUsername) : null;
+                    await this.logStep(runId, 'DM: conversation header', { peer: peerUsername ? `@${peerUsername}` : 'unknown', title: conversationTitle });
                     
                     // Check if we've already replied to this conversation
                     const conversationKeyRaw = (peerUsername ? `@${peerUsername}` : conversationTitle).trim();
@@ -943,6 +962,7 @@ export class IgClient {
                     
                     if (shouldReply) {
                         logger.info(`${prefix}: reply needed peer=${peerUsername ? `@${peerUsername}` : 'unknown'} title="${conversationTitle}"`);
+                        await this.logStep(runId, 'DM: generate reply', { peer: peerUsername ? `@${peerUsername}` : 'unknown' });
                         
                         // Generate AI reply based on the conversation
                         const { runAgent } = await import('../../Agent');
@@ -1005,6 +1025,7 @@ Return JSON only.`;
                         // Type and send reply
                         const messageInput = await page.$('div[contenteditable="true"]');
                         if (messageInput) {
+                            await this.logStep(runId, 'DM: type reply', { peer: peerUsername ? `@${peerUsername}` : 'unknown', chars: reply.length });
                             await messageInput.click();
                             await delay(500);
                             
@@ -1016,6 +1037,7 @@ Return JSON only.`;
                             await delay(1000);
                             await page.keyboard.press('Enter');
                             logger.info(`${prefix}: ✅ reply sent peer=${peerUsername ? `@${peerUsername}` : 'unknown'} title="${conversationTitle}"`);
+                            await this.logStep(runId, 'DM: sent', { peer: peerUsername ? `@${peerUsername}` : 'unknown' });
                             
                             // Mark this conversation as replied
                             this.repliedConversations.add(conversationId);
@@ -1066,9 +1088,11 @@ Return JSON only.`;
             const page = this.page;
             const normalizedUsername = username.replace(/^@/, '').trim();
             const profileUrl = `https://www.instagram.com/${normalizedUsername}/`;
+            await this.logStep(null, 'DM: send flow start', { target: `@${normalizedUsername}`, media: mediaPath ? 'yes' : 'no', chars: message?.length ?? 0 });
 
             const openComposerViaDirectNew = async () => {
                 // More reliable than the profile "Message" button (which can be "Send message", icon-only, or absent)
+                await this.logStep(null, 'DM: goto direct/new', { target: `@${normalizedUsername}` });
                 await page.goto('https://www.instagram.com/direct/new/', { waitUntil: 'networkidle2', timeout: 60000 });
                 await delay(2000);
                 await this.handleNotificationPopup();
@@ -1092,6 +1116,7 @@ Return JSON only.`;
                 }
                 if (!searchInput) throw new Error('DM compose search input not found.');
 
+                await this.logStep(null, 'DM: search recipient', { target: `@${normalizedUsername}` });
                 await (searchInput as puppeteer.ElementHandle<Element>).click({ clickCount: 3 });
                 await delay(200);
                 await page.keyboard.press('Backspace');
@@ -1115,6 +1140,7 @@ Return JSON only.`;
                 if (!selected) throw new Error(`DM recipient "${normalizedUsername}" not found in composer results.`);
 
                 // Click Next
+                await this.logStep(null, 'DM: click Next', { target: `@${normalizedUsername}` });
                 const nextClicked = await page.evaluate(() => {
                     const buttons = Array.from(document.querySelectorAll('button, div[role="button"]'));
                     const next = buttons.find((el) => (el.textContent || '').trim().toLowerCase() === 'next');
@@ -1149,6 +1175,7 @@ Return JSON only.`;
             });
             const messageButton = messageButtonHandle?.asElement();
             if (messageButton) {
+                await this.logStep(null, 'DM: click Message button', { target: `@${normalizedUsername}` });
                 await (messageButton as puppeteer.ElementHandle<Element>).click();
                 await delay(2000);
                 await this.handleNotificationPopup();
@@ -1175,6 +1202,7 @@ Return JSON only.`;
                 if (messageInput) break;
             }
             if (!messageInput) throw new Error("Message input not found.");
+            await this.logStep(null, 'DM: type message', { target: `@${normalizedUsername}`, selector: 'messageInput', chars: message.length });
             await messageInput.type(message);
             await this.handleNotificationPopup();
             await delay(2000);
@@ -1193,6 +1221,7 @@ Return JSON only.`;
                 if (sendButton) break;
             }
             if (!sendButton) throw new Error("Send button not found.");
+            await this.logStep(null, 'DM: click Send', { target: `@${normalizedUsername}` });
             await sendButton.click();
             await this.handleNotificationPopup();
             console.log("Message sent successfully");
@@ -1904,10 +1933,12 @@ IMPORTANT: Write in clear, proper English only. No typos, no gibberish, no rando
                 : undefined;
             let aiRepliesSent = 0;
 
-            logger.info(`${runId ? `[run:${runId}] ` : ''}🎞️ Starting story session (${storyCount} stories)`);
+            logger.info(`${runId ? `[run:${runId}] ` : ''}🎞️ Starting story session (${storyCount} stories)${normalizedTarget ? ` target=@${normalizedTarget}` : ''}`);
+            await this.logStep(runId, 'STORY: session start', { count: storyCount, target: normalizedTarget ? `@${normalizedTarget}` : 'feed' });
             await this.showOverlayMessage('Opening stories…', 'info');
 
             if (source === 'user' && normalizedTarget) {
+                await this.logStep(runId, 'STORY: goto target stories', { target: `@${normalizedTarget}` });
                 logger.info(`${runId ? `[run:${runId}] ` : ''}📺 Navigating to stories for @${normalizedTarget}`);
                 await page.goto(`https://www.instagram.com/stories/${normalizedTarget}/`, {
                     waitUntil: "networkidle2",
@@ -1915,6 +1946,7 @@ IMPORTANT: Write in clear, proper English only. No typos, no gibberish, no rando
                 });
                 await delay(3000);
             } else {
+                await this.logStep(runId, 'STORY: goto home (feed stories)', {});
                 logger.info(`${runId ? `[run:${runId}] ` : ''}🏠 Navigating to Instagram home (stories from feed)`);
                 await page.goto("https://www.instagram.com/", {
                     waitUntil: "networkidle2",
