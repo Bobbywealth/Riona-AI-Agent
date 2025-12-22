@@ -1,5 +1,6 @@
 import { IgClient } from './IG-bot/IgClient';
 import logger from '../config/logger';
+import { Instagram_cookiesExist } from '../utils';
 
 let igClient: IgClient | null = null;
 let lastCredentials: { username: string, password: string } | null = null;
@@ -20,9 +21,25 @@ export const getIgClient = async (username?: string, password?: string): Promise
         }
     }
     
-    // If no existing client, throw error (must login first)
+    // If no existing client, try to bootstrap from cookies (so actions still work after a restart)
+    // NOTE: We can init with an empty password because IgClient.init() will use cookies when present.
     if (!igClient) {
-        throw new Error('No Instagram client initialized. Please login first.');
+        if (!username) {
+            throw new Error('No Instagram client initialized. Please login first.');
+        }
+        const cookiesReady = await Instagram_cookiesExist();
+        if (!cookiesReady) {
+            throw new Error('No Instagram client initialized. Please login first.');
+        }
+        igClient = new IgClient(username, password || '');
+        lastCredentials = { username, password: password || '' };
+        try {
+            await igClient.init();
+        } catch (error) {
+            logger.error("Failed to initialize Instagram client from cookies", error);
+            igClient = null;
+            throw error;
+        }
     }
     
     // If existing client doesn't have browser initialized, reinitialize it
