@@ -105,6 +105,12 @@ export class IgClient {
     private sessionRefreshInterval: NodeJS.Timeout | null = null;
     private lastSessionRefresh: Date | null = null;
 
+    private step(runId: string | undefined, message: string, meta?: any) {
+        const prefix = runId ? `[run:${runId}] ` : '';
+        const extra = meta ? ` ${JSON.stringify(meta)}` : '';
+        logger.debug(`${prefix}${message}${extra}`);
+    }
+
     constructor(username?: string, password?: string) {
         this.username = username || '';
         this.password = password || '';
@@ -1039,12 +1045,17 @@ Generate a friendly, helpful reply that:
         const page = this.page;
         const commentedPosts = new Set<string>(); // Track commented posts to prevent duplicates this session
         const resolvedOptions: InteractionOptions = options || {};
+        const runId = resolvedOptions.runId;
         const activeMode: InteractionMode = resolvedOptions.mode || this.inferModeFromTarget(targetUsername);
+        logger.info(
+            `${runId ? `[run:${runId}] ` : ''}🚀 Campaign begin (mode=${activeMode}, maxPosts=${maxPosts}${targetUsername ? `, target=${targetUsername}` : ''})`
+        );
         
         if (activeMode === 'competitor_followers') {
             const competitorUsername = this.normalizeUsername(resolvedOptions.competitorUsername);
             if (!competitorUsername) {
                 console.log('❌ competitorUsername is required for competitor follower targeting.');
+                logger.warn(`${runId ? `[run:${runId}] ` : ''}⚠️ competitorUsername missing; abort`);
                 return;
             }
             const postsPerFollower = Math.max(1, resolvedOptions.postsPerFollower || 1);
@@ -1088,12 +1099,14 @@ Generate a friendly, helpful reply that:
         // Navigate based on targeting mode
         if (activeMode === 'feed') {
             console.log(`📰 Staying on Home Feed for recent posts...`);
+            this.step(runId, 'Campaign: feed mode');
             // Already on home page from login, just wait a bit
             await delay(3000);
             await this.handleNotificationPopup();
             
             // Capture screenshot of feed
             console.log(`📸 Capturing feed screenshot...`);
+            logger.info(`${runId ? `[run:${runId}] ` : ''}📸 Capturing feed screenshot`);
             await this.captureGenericPageScreenshot(page, 'feed-screens', 'home-feed-loaded');
             
             console.log(`Ready to interact with feed posts...`);
@@ -1101,6 +1114,7 @@ Generate a friendly, helpful reply that:
             // Don't click on any post, just scroll through feed
         } else if (activeMode === 'explore') {
             console.log(`🌍 Navigating to Explore page...`);
+            logger.info(`${runId ? `[run:${runId}] ` : ''}🌍 Navigating to Explore page`);
             await page.goto(`https://www.instagram.com/explore/`, {
                 waitUntil: "networkidle2",
             });
@@ -1123,6 +1137,7 @@ Generate a friendly, helpful reply that:
             
             if (firstPost) {
                 console.log(`Found post, clicking...`);
+                this.step(runId, 'Campaign: click first explore post');
                 await firstPost.click();
                 await delay(4000);
                 await this.handleNotificationPopup();
@@ -1154,6 +1169,7 @@ Generate a friendly, helpful reply that:
                 return;
             }
             console.log(`🔖 Targeting #${hashtag}...`);
+            logger.info(`${runId ? `[run:${runId}] ` : ''}🔖 Targeting hashtag #${hashtag}`);
             await page.goto(`https://www.instagram.com/explore/tags/${hashtag}/`, {
                 waitUntil: "networkidle2",
             });
@@ -1674,6 +1690,7 @@ IMPORTANT: Write in clear, proper English only. No typos, no gibberish, no rando
     async watchStories(options: StoryOptions = {}) {
         if (!this.page) throw new Error("Page not initialized");
         const page = this.page;
+        const runId = options.runId;
         
         try {
             const normalizedTarget = this.normalizeUsername(options.targetUsername);
@@ -1703,16 +1720,18 @@ IMPORTANT: Write in clear, proper English only. No typos, no gibberish, no rando
                 : undefined;
             let aiRepliesSent = 0;
 
-            console.log(`🎞️ Starting story session (${storyCount} stories)`);
+            logger.info(`${runId ? `[run:${runId}] ` : ''}🎞️ Starting story session (${storyCount} stories)`);
             await this.showOverlayMessage('Opening stories…', 'info');
 
             if (source === 'user' && normalizedTarget) {
+                logger.info(`${runId ? `[run:${runId}] ` : ''}📺 Navigating to stories for @${normalizedTarget}`);
                 await page.goto(`https://www.instagram.com/stories/${normalizedTarget}/`, {
                     waitUntil: "networkidle2",
                     timeout: 60000,
                 });
                 await delay(3000);
             } else {
+                logger.info(`${runId ? `[run:${runId}] ` : ''}🏠 Navigating to Instagram home (stories from feed)`);
                 await page.goto("https://www.instagram.com/", {
                     waitUntil: "networkidle2",
                     timeout: 60000,
@@ -1724,18 +1743,21 @@ IMPORTANT: Write in clear, proper English only. No typos, no gibberish, no rando
             const viewerReady = await this.ensureStoryViewerOpen(normalizedTarget);
             if (!viewerReady) {
                 console.log('⚠️ Unable to open story viewer. No stories available.');
+                logger.warn(`${runId ? `[run:${runId}] ` : ''}⚠️ Unable to open story viewer (no stories available)`);
                 await this.showOverlayMessage('No stories available right now', 'warning');
                 return;
             }
 
             for (let index = 1; index <= storyCount; index++) {
                 await this.showOverlayMessage(`👀 Viewing story ${index}/${storyCount}`, 'info');
+                logger.info(`${runId ? `[run:${runId}] ` : ''}👀 Viewing story ${index}/${storyCount}`);
                 await delay(600);
                 let screenshotPath: string | null = null;
                 if (aiReplyOptions) {
                     screenshotPath = await this.captureStoryScreenshot(index, normalizedTarget || source);
                     if (screenshotPath) {
                         console.log(`📸 Story ${index} screenshot saved to ${screenshotPath}`);
+                        logger.info(`${runId ? `[run:${runId}] ` : ''}📸 Screenshot saved: ${screenshotPath}`);
                     }
                 }
 
@@ -1763,14 +1785,23 @@ IMPORTANT: Write in clear, proper English only. No typos, no gibberish, no rando
                             console.log(
                                 `🤖 AI replied to story ${index}: "${decision.replyText}" (${confidencePct}% confidence)`
                             );
+                            logger.info(
+                                `${runId ? `[run:${runId}] ` : ''}🤖 AI replied to story ${index} (${confidencePct}%): "${decision.replyText}"`
+                            );
                         } else {
                             console.warn('⚠️ AI story reply failed to send.');
+                            logger.warn(`${runId ? `[run:${runId}] ` : ''}⚠️ AI story reply failed to send (story ${index})`);
                         }
                     } else if (decision) {
                         console.log(
                             `🤖 Skipping story ${index} (confidence ${(decision.confidence * 100).toFixed(
                                 0
                             )}%)`
+                        );
+                        logger.info(
+                            `${runId ? `[run:${runId}] ` : ''}🤖 Skipping story ${index} (confidence ${(
+                                decision.confidence * 100
+                            ).toFixed(0)}%)`
                         );
                     }
                 }
@@ -1779,31 +1810,39 @@ IMPORTANT: Write in clear, proper English only. No typos, no gibberish, no rando
                 await this.humanLikePause(Math.max(1500, watchTime - 1500), watchTime + 500);
 
                 if (!repliedViaAI && Math.random() < likeProbability) {
+                    this.step(runId, 'Stories: click Like', { index });
                     const liked = await this.tryLikeCurrentStory();
                     if (liked) {
                         console.log(`❤️ Liked story ${index}`);
+                        logger.info(`${runId ? `[run:${runId}] ` : ''}❤️ Liked story ${index}`);
                         await this.showOverlayMessage(`❤️ Liked story ${index}`, 'success');
                     }
                 } else if (!repliedViaAI && Math.random() < reactionProbability) {
+                    this.step(runId, 'Stories: click React', { index, emoji: reactionEmoji });
                     const reacted = await this.tryReactToStory(reactionEmoji);
                     if (reacted) {
                         console.log(`💬 Reacted to story ${index} with ${reactionEmoji}`);
+                        logger.info(`${runId ? `[run:${runId}] ` : ''}💬 Reacted to story ${index} with ${reactionEmoji}`);
                         await this.showOverlayMessage(`💬 Reacted with ${reactionEmoji}`, 'success');
                     }
                 }
 
+                this.step(runId, 'Stories: advance', { index });
                 const advanced = await this.goToNextStory();
                 if (!advanced) {
                     console.log('Reached the end of available stories.');
+                    logger.info(`${runId ? `[run:${runId}] ` : ''}🏁 Reached the end of available stories`);
                     break;
                 }
                 await delay(1200);
             }
 
             await this.showOverlayMessage('Stories session complete ✅', 'success');
+            logger.info(`${runId ? `[run:${runId}] ` : ''}✅ Stories session complete`);
             await page.keyboard.press('Escape').catch(() => undefined);
         } catch (error: any) {
             console.error('❌ Error during story session:', error.message);
+            logger.error(`${runId ? `[run:${runId}] ` : ''}❌ Error during story session: ${error?.message || error}`);
             await this.showOverlayMessage('Story session failed', 'error');
             // Try to escape story viewer if we're stuck
             try {

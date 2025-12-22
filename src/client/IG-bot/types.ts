@@ -13,6 +13,11 @@ export interface EngagementFilters {
 }
 
 export interface InteractionOptions {
+  /**
+   * Optional run identifier used to correlate click-by-click logs in the dashboard.
+   * Set by API when starting a background automation job.
+   */
+  runId?: string;
   mode?: InteractionMode;
   hashtags?: string[];
   locationPath?: string;
@@ -42,6 +47,11 @@ export interface StoryAIReplyOptions {
 }
 
 export interface StoryOptions {
+  /**
+   * Optional run identifier used to correlate click-by-click logs in the dashboard.
+   * Set by API when starting a background automation job.
+   */
+  runId?: string;
   source?: 'feed' | 'user';
   targetUsername?: string;
   storyCount?: number;

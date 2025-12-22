@@ -24,6 +24,7 @@ const cookieSameSite: 'lax' | 'strict' | 'none' =
     : 'lax';
 const cookieSecure = process.env.COOKIE_SECURE === 'true';
 const logsDirectory = path.join(__dirname, '../../logs');
+const makeRunId = () => `run_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 
 async function fileExists(filePath: string): Promise<boolean> {
   try {
@@ -495,10 +496,7 @@ router.get('/proxy/status', async (req: Request, res: Response) => {
   }
 });
 
-// All routes below require authentication
-router.use(requireAuth);
-
-router.post('/ai/command', async (req: Request, res: Response) => {
+router.post('/ai/command', requireAuth, async (req: Request, res: Response) => {
   try {
     const { message, history } = req.body;
     if (typeof message !== 'string' || !message.trim().length) {
@@ -554,13 +552,24 @@ router.get('/logs/recent', async (req: Request, res: Response) => {
     const now = new Date();
     const dateSlug = now.toISOString().split('T')[0];
     const logPath = path.join(logsDirectory, `${dateSlug}-combined.log`);
+    const includeDebug =
+      req.query.includeDebug === '1' || req.query.includeDebug === 'true' || req.query.includeDebug === 'yes';
+    const runIdFilter = typeof req.query.runId === 'string' ? req.query.runId.trim() : null;
+    const debugLogPath = path.join(logsDirectory, `${dateSlug}-debug.log`);
 
-    if (!(await fileExists(logPath))) {
+    if (!(await fileExists(logPath)) && !(includeDebug && (await fileExists(debugLogPath)))) {
       return res.json({ logs: [], stats: { total: 0, info: 0, warn: 0, error: 0, debug: 0 } });
     }
 
-    const raw = await fs.readFile(logPath, 'utf-8');
-    const rawLines = raw.trim().split(/\r?\n/).filter(Boolean);
+    const rawLines: string[] = [];
+    if (await fileExists(logPath)) {
+      const raw = await fs.readFile(logPath, 'utf-8');
+      rawLines.push(...raw.trim().split(/\r?\n/).filter(Boolean));
+    }
+    if (includeDebug && (await fileExists(debugLogPath))) {
+      const rawDebug = await fs.readFile(debugLogPath, 'utf-8');
+      rawLines.push(...rawDebug.trim().split(/\r?\n/).filter(Boolean));
+    }
     
     // Helper to strip ANSI color codes from strings
     const stripAnsi = (str: string): string => {
@@ -638,10 +647,22 @@ router.get('/logs/recent', async (req: Request, res: Response) => {
     if (categoryFilter && categoryFilter !== 'all') {
       filteredLogs = filteredLogs.filter(l => l.category === categoryFilter);
     }
+    if (runIdFilter) {
+      const needle = runIdFilter.startsWith('run_') ? runIdFilter : runIdFilter;
+      filteredLogs = filteredLogs.filter((l) => (l.message || '').includes(`[run:${needle}]`));
+    }
     
+    // Sort by timestamp so combined + debug merges cleanly, then take most recent
+    filteredLogs.sort((a: any, b: any) => {
+      const ta = Date.parse(a.timestamp) || 0;
+      const tb = Date.parse(b.timestamp) || 0;
+      return ta - tb;
+    });
+
     // Get the most recent entries
     const logs = filteredLogs.slice(-limit).reverse();
     
+    res.setHeader('Cache-Control', 'no-store');
     return res.json({ logs, stats });
   } catch (error) {
     logger.error('Recent logs fetch error:', error);
@@ -747,6 +768,7 @@ router.post('/interact', async (req: Request, res: Response) => {
   try {
     const { targetUsername, maxPosts, mode, options } = req.body;
     const igClient = await getIgClient((req as any).user.username);
+    const runId = makeRunId();
 
     const sanitizeNumber = (value: any): number | undefined => {
       if (typeof value === 'number' && !Number.isNaN(value)) return value;
@@ -788,6 +810,7 @@ router.post('/interact', async (req: Request, res: Response) => {
 
     const bodyOptions = (options || {}) as InteractionOptions;
     const interactionOptions: InteractionOptions = {
+      runId,
       mode: bodyOptions.mode || mode,
       hashtags: sanitizeStringArray(bodyOptions.hashtags),
       locationPath:
@@ -822,14 +845,17 @@ router.post('/interact', async (req: Request, res: Response) => {
     // Kick off the job in the background so reverse proxies (nginx) don't 504 on long runs.
     // The UI can follow progress via `/api/logs/recent`.
     setImmediate(() => {
+      logger.info(`[run:${runId}] 🚀 Campaign started (mode=${interactionOptions.mode || 'feed'}, maxPosts=${maxPosts || 5})`);
       igClient
         .interactWithPosts(targetUsername, maxPosts || 5, interactionOptions)
-        .catch((error) => logger.error('Interaction error (background):', error));
+        .then(() => logger.info(`[run:${runId}] ✅ Campaign finished`))
+        .catch((error) => logger.error(`[run:${runId}] ❌ Campaign error (background):`, error));
     });
 
     return res.status(202).json({
       message: 'Interaction started',
       mode: interactionOptions.mode || 'feed',
+      runId,
     });
   } catch (error) {
     logger.error('Interaction error:', error);
@@ -841,6 +867,7 @@ router.post('/interact', async (req: Request, res: Response) => {
 router.post('/stories/watch', async (req: Request, res: Response) => {
   try {
     const igClient = await getIgClient((req as any).user.username);
+    const runId = makeRunId();
 
     const sanitizeNumber = (value: any): number | undefined => {
       if (typeof value === 'number' && !Number.isNaN(value)) return value;
@@ -881,6 +908,7 @@ router.post('/stories/watch', async (req: Request, res: Response) => {
   };
 
   const options: StoryOptions = {
+      runId,
       targetUsername:
         typeof req.body.targetUsername === 'string'
           ? req.body.targetUsername.trim()
@@ -908,10 +936,14 @@ router.post('/stories/watch', async (req: Request, res: Response) => {
     // Kick off the job in the background so reverse proxies (nginx) don't 504 on long story sessions.
     // The UI can follow progress via `/api/logs/recent`.
     setImmediate(() => {
-      igClient.watchStories(options).catch((error) => logger.error('Stories watch error (background):', error));
+      logger.info(`[run:${runId}] 🎞️ Stories started (count=${options.storyCount ?? 10}${options.targetUsername ? `, target=@${options.targetUsername}` : ''})`);
+      igClient
+        .watchStories(options)
+        .then(() => logger.info(`[run:${runId}] ✅ Stories finished`))
+        .catch((error) => logger.error(`[run:${runId}] ❌ Stories error (background):`, error));
     });
 
-    return res.status(202).json({ message: 'Story watching started' });
+    return res.status(202).json({ message: 'Story watching started', runId });
   } catch (error) {
     logger.error('Stories watch error:', error);
     return res.status(500).json({ error: 'Failed to watch stories' });
@@ -922,12 +954,17 @@ router.post('/stories/watch', async (req: Request, res: Response) => {
 router.post('/monitor-dms', async (req: Request, res: Response) => {
   try {
     const igClient = await getIgClient((req as any).user.username);
+    const runId = makeRunId();
     // DM monitoring can be long-running; start in background to avoid gateway timeouts.
     setImmediate(() => {
-      igClient.monitorAndReplyToDMs().catch((error) => logger.error('DM monitoring error (background):', error));
+      logger.info(`[run:${runId}] 📬 DM monitoring started`);
+      igClient
+        .monitorAndReplyToDMs()
+        .then(() => logger.info(`[run:${runId}] ✅ DM monitoring finished`))
+        .catch((error) => logger.error(`[run:${runId}] ❌ DM monitoring error (background):`, error));
     });
 
-    return res.status(202).json({ message: 'DM monitoring started' });
+    return res.status(202).json({ message: 'DM monitoring started', runId });
   } catch (error) {
     logger.error('DM monitoring error:', error);
     return res.status(500).json({ error: 'Failed to monitor DMs' });
