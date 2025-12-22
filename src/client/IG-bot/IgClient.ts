@@ -298,6 +298,9 @@ export class IgClient {
         
         this.browser = await puppeteerExtra.launch({
             headless: true, // Run in headless mode (no GUI needed on server)
+            // Prevent CDP calls from timing out on slower VPS/IG pages.
+            // Fixes errors like: Runtime.callFunctionOn timed out / Page.captureScreenshot timed out.
+            protocolTimeout: parseInt(process.env.PUPPETEER_PROTOCOL_TIMEOUT || '180000', 10),
             args: launchArgs,
             executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/nix/store/qa9cnw4v5xkxyip6mb9kxqfq1z4x2dx1-chromium-138.0.7204.100/bin/chromium',
         });
