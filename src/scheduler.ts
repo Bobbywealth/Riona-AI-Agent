@@ -18,23 +18,19 @@ type JobInfo = {
 };
 
 let isRunning = false;
+let activeRun: { taskId: string; runId: string; startedAt: string } | null = null;
 let refreshInterval: NodeJS.Timeout | null = null;
 const jobsByTaskId = new Map<string, CronJob>();
 let lastLoadedTasks: JobInfo[] = [];
+const queuedTaskIds = new Set<string>();
+const taskQueue: string[] = [];
 
 const makeRunId = () => `run_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 
-async function executeScheduledTask(task: any) {
-  if (isRunning) {
-    logger.warn(`⏰ Scheduler: previous run still active; skipping task "${task?.name || task?._id}"`);
-    return;
-  }
-
-  const runId = makeRunId();
+async function executeScheduledTask(task: any, runId: string) {
   const prefix = `[sched:${task._id}] [run:${runId}]`;
 
   try {
-    isRunning = true;
     logger.info(`${prefix} ▶️ Starting scheduled task "${task.name}" (${task.taskType})`);
 
     // Ensure the IG client exists even if dashboard login hasn't happened.
@@ -114,9 +110,45 @@ async function executeScheduledTask(task: any) {
     }
   } catch (error) {
     logger.error(`${prefix} ❌ Scheduled task failed:`, error);
+  }
+}
+
+async function drainQueue() {
+  if (isRunning) return;
+  const nextTaskId = taskQueue.shift();
+  if (!nextTaskId) return;
+  queuedTaskIds.delete(nextTaskId);
+
+  const runId = makeRunId();
+  activeRun = { taskId: nextTaskId, runId, startedAt: new Date().toISOString() };
+  isRunning = true;
+
+  try {
+    const task = await ScheduledTask.findById(nextTaskId);
+    if (!task || !(task as any).enabled) {
+      logger.info(`[sched:${nextTaskId}] [run:${runId}] ⏭️ Task missing/disabled; skipping`);
+      return;
+    }
+    await executeScheduledTask(task, runId);
+  } catch (error) {
+    logger.error(`[sched:${nextTaskId}] [run:${runId}] ❌ Scheduler queue execution error:`, error as any);
   } finally {
     isRunning = false;
+    activeRun = null;
+    if (taskQueue.length) setImmediate(drainQueue);
   }
+}
+
+function enqueueTask(taskId: string, reason: string) {
+  if (!taskId) return;
+  if (queuedTaskIds.has(taskId)) {
+    logger.info(`⏰ Scheduler: already queued task ${taskId} (${reason})`);
+    return;
+  }
+  queuedTaskIds.add(taskId);
+  taskQueue.push(taskId);
+  logger.info(`⏰ Scheduler: queued task ${taskId} (${reason}) queueDepth=${taskQueue.length}`);
+  setImmediate(drainQueue);
 }
 
 async function refreshJobs() {
@@ -171,7 +203,7 @@ async function refreshJobs() {
           job = new CronJob(
             runAt,
             () => {
-              executeScheduledTask(task);
+              enqueueTask(taskId, 'once');
             },
             null,
             true
@@ -184,7 +216,7 @@ async function refreshJobs() {
           job = new CronJob(
             task.cronExpression,
             () => {
-              executeScheduledTask(task);
+              enqueueTask(taskId, 'cron');
             },
             null,
             true,
@@ -243,6 +275,8 @@ export function startScheduler() {
 export function getSchedulerStatus() {
   return {
     isRunning,
+    activeRun,
+    queueDepth: taskQueue.length,
     schedules: lastLoadedTasks,
     activeJobs: jobsByTaskId.size,
   };
