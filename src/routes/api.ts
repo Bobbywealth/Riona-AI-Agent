@@ -356,13 +356,15 @@ router.post('/session/refresh', requireAuth, async (req: Request, res: Response)
   try {
     const igClient = await getIgClient((req as any).user.username);
     const success = await igClient.refreshSession();
+    const isLoggedIn = await igClient.isLoggedIn().catch(() => false);
     
     if (success) {
       const sessionStatus = igClient.getSessionStatus();
       return res.json({ 
         success: true, 
         message: 'Session refreshed successfully',
-        session: sessionStatus
+        session: sessionStatus,
+        isLoggedIn
       });
     } else {
       return res.status(500).json({ 
@@ -380,10 +382,12 @@ router.get('/session/status', requireAuth, async (req: Request, res: Response) =
   try {
     const igClient = await getIgClient((req as any).user.username);
     const sessionStatus = igClient.getSessionStatus();
+    const isLoggedIn = await igClient.isLoggedIn().catch(() => false);
     
     return res.json({ 
       success: true,
-      session: sessionStatus
+      session: sessionStatus,
+      isLoggedIn
     });
   } catch (error) {
     logger.error('Get session status error:', error);

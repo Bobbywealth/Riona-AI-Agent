@@ -3186,6 +3186,42 @@ Return only the DM text.`;
     }
 
     /**
+     * Lightweight check whether we appear to be logged into Instagram right now.
+     * Does not navigate; uses the current page DOM.
+     */
+    public async isLoggedIn(): Promise<boolean> {
+        if (!this.page) return false;
+        try {
+            const url = this.page.url() || '';
+            // If we're not even on Instagram, treat as unknown/false.
+            if (!url.includes('instagram.com')) return false;
+
+            return await this.page.evaluate(() => {
+                // Login form inputs typically present when logged out
+                const loginUser = document.querySelector('input[name="username"]');
+                const loginPass = document.querySelector('input[name="password"]');
+                if (loginUser || loginPass) return false;
+
+                // Logged-in indicators
+                const homeIcon = document.querySelector('svg[aria-label="Home"]');
+                const directIcon = document.querySelector('svg[aria-label="Direct"]');
+                const nav = document.querySelector('nav');
+                if (homeIcon || directIcon) return true;
+                if (nav && nav.querySelector('a[href="/"]')) return true;
+
+                // Fallback: if body contains "Log in" prominently, assume logged out
+                const bodyText = (document.body?.innerText || '').toLowerCase();
+                if (bodyText.includes('log in') && bodyText.includes('sign up')) return false;
+
+                // Otherwise unknown -> assume logged in (conservative to avoid false negatives)
+                return true;
+            });
+        } catch {
+            return false;
+        }
+    }
+
+    /**
      * Get session status information
      */
     public getSessionStatus() {

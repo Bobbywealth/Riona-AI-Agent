@@ -726,6 +726,7 @@
             <span class="pill" id="pillDb">🗄️ DB: …</span>
             <span class="pill" id="pillProxy">🌐 Proxy: …</span>
             <span class="pill" id="pillAi">🤖 Gemini: …</span>
+            <span class="pill" id="pillIgSession">📱 IG: …</span>
             <span class="pill" id="pillAuth">🔐 Dashboard: …</span>
         </div>
         
@@ -759,6 +760,22 @@
                 <div id="loggedInControls" class="hidden">
                     <button class="btn-danger" onclick="logout()">🚪 Logout</button>
                     <button class="btn-secondary" onclick="clearCookies()">🧹 Clear Cookies</button>
+                    <div class="card-divider"></div>
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="igKeepAliveToggle" checked>
+                        <label style="margin: 0;">Keep IG session warm (auto-refresh)</label>
+                    </div>
+                    <div class="form-group" style="margin-top: 10px;">
+                        <label>Keep-alive interval</label>
+                        <select id="igKeepAliveInterval">
+                            <option value="15">Every 15 minutes</option>
+                            <option value="30" selected>Every 30 minutes</option>
+                            <option value="60">Every 60 minutes</option>
+                            <option value="120">Every 2 hours</option>
+                        </select>
+                        <small style="display:block;color:#6b7280;margin-top:4px;">Will skip if a scheduled task is actively running.</small>
+                    </div>
+                    <button class="btn-info" onclick="refreshIgSessionNow()">🔄 Refresh IG Session Now</button>
                 </div>
                 
                 <div class="loading" id="loadingLogin">
@@ -1211,6 +1228,8 @@
         const aiChatHistory = [];
         let schedulerLoaded = false;
         let systemOverviewInterval = null;
+        let igKeepAliveIntervalHandle = null;
+        let lastIgKeepAliveAttemptAt = 0;
         // Cache scheduler tasks so we can edit them without embedding JSON in onclick handlers
         window.__scheduledTasksById = window.__scheduledTasksById || {};
 
@@ -2112,6 +2131,7 @@
             if (!systemOverviewInterval) {
                 systemOverviewInterval = setInterval(refreshSystemOverview, 15000);
             }
+            initIgKeepAliveControls();
 
             // Keep the right rail fresh (lightweight)
             setInterval(refreshRightRail, 8000);
@@ -2763,6 +2783,23 @@
                     setPill('pillAi', '🤖 Gemini: unknown', 'warn');
                 }
 
+                // IG session health (requires auth)
+                if (statusRes && !statusRes.error && statusRes.authenticated) {
+                    const sessRes = await apiCall('/api/session/status');
+                    if (sessRes && !sessRes.error) {
+                        const ok = !!sessRes.isLoggedIn;
+                        const next = sessRes.session?.nextRefresh ? new Date(sessRes.session.nextRefresh) : null;
+                        const last = sessRes.session?.lastRefresh ? new Date(sessRes.session.lastRefresh) : null;
+                        const nextStr = next && !isNaN(next.getTime()) ? next.toLocaleTimeString() : 'n/a';
+                        const lastStr = last && !isNaN(last.getTime()) ? last.toLocaleTimeString() : 'n/a';
+                        setPill('pillIgSession', `📱 IG: ${ok ? 'ok' : 'logged out'} (last ${lastStr}, next ${nextStr})`, ok ? 'ok' : 'bad');
+                    } else {
+                        setPill('pillIgSession', '📱 IG: unknown', 'warn');
+                    }
+                } else {
+                    setPill('pillIgSession', '📱 IG: login required', 'neutral');
+                }
+
                 if (metricsRes && !metricsRes.error && metricsRes.counts) {
                     const c = metricsRes.counts;
                     const text = `📊 Today: ❤️ ${c.campaignLikes || 0} · 💬 ${c.campaignComments || 0} · 📩 ${c.dmsSent || 0} · ↩️ ${c.dmRepliesSent || 0} · 👀 ${c.storyViews || 0}`;
@@ -2773,6 +2810,75 @@
             } catch {
                 // ignore
             }
+        }
+
+        function initIgKeepAliveControls() {
+            const toggle = document.getElementById('igKeepAliveToggle');
+            const intervalSel = document.getElementById('igKeepAliveInterval');
+            if (!toggle || !intervalSel) return;
+
+            // Restore saved settings
+            const savedEnabled = localStorage.getItem('igKeepAliveEnabled');
+            const savedInterval = localStorage.getItem('igKeepAliveMinutes');
+            if (savedEnabled !== null) toggle.checked = savedEnabled === 'true';
+            if (savedInterval) intervalSel.value = savedInterval;
+
+            const apply = () => {
+                localStorage.setItem('igKeepAliveEnabled', String(toggle.checked));
+                localStorage.setItem('igKeepAliveMinutes', String(intervalSel.value));
+                startIgKeepAliveLoop();
+            };
+
+            toggle.addEventListener('change', apply);
+            intervalSel.addEventListener('change', apply);
+            startIgKeepAliveLoop();
+        }
+
+        function startIgKeepAliveLoop() {
+            if (igKeepAliveIntervalHandle) {
+                clearInterval(igKeepAliveIntervalHandle);
+                igKeepAliveIntervalHandle = null;
+            }
+            const toggle = document.getElementById('igKeepAliveToggle');
+            const intervalSel = document.getElementById('igKeepAliveInterval');
+            if (!toggle || !intervalSel) return;
+            if (!toggle.checked) return;
+
+            const minutes = parseInt(intervalSel.value, 10) || 30;
+            igKeepAliveIntervalHandle = setInterval(() => {
+                maybeRefreshIgSession('auto');
+            }, minutes * 60 * 1000);
+
+            // kick off soon after enabling
+            setTimeout(() => maybeRefreshIgSession('auto'), 5000);
+        }
+
+        async function maybeRefreshIgSession(source = 'auto') {
+            const now = Date.now();
+            if (now - lastIgKeepAliveAttemptAt < 30_000) return; // debounce
+            lastIgKeepAliveAttemptAt = now;
+
+            // Only when authenticated
+            const statusRes = await apiCall('/api/status');
+            if (!statusRes || statusRes.error || !statusRes.authenticated) return;
+
+            // Skip if scheduler actively running a task
+            const sched = await apiCall('/api/scheduler/status');
+            if (sched && !sched.error && sched.isRunning) {
+                addLog(`⏭️ IG keep-alive skipped (scheduler busy)`);
+                return;
+            }
+
+            const res = await apiCall('/api/session/refresh', 'POST', {});
+            if (res && !res.error) {
+                addLog(`✅ IG session refreshed (${source})`);
+            } else {
+                addLog(`⚠️ IG session refresh failed (${source}): ${res?.error || 'unknown'}`);
+            }
+        }
+
+        async function refreshIgSessionNow() {
+            return maybeRefreshIgSession('manual');
         }
 
         function startLocalClock() {
