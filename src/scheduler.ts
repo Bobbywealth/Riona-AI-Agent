@@ -4,6 +4,7 @@ import logger from './config/logger';
 import ScheduledTask from './models/ScheduledTask';
 import { getIgClient } from './client/Instagram';
 import { IGpassword, IGusername } from './secret';
+import { loadDmAiSettings } from './config/dm-ai-settings';
 
 type JobInfo = {
   taskId: string;
@@ -75,7 +76,8 @@ async function executeScheduledTask(task: any) {
       }
       case 'dm_monitor': {
         const cfg = task.config || {};
-        await igClient.monitorAndReplyToDMs(cfg.maxConversations ?? 5, { runId });
+        const dmAiSettings = await loadDmAiSettings().catch(() => null);
+        await igClient.monitorAndReplyToDMs(cfg.maxConversations ?? 5, { runId, aiSettings: dmAiSettings || undefined });
         break;
       }
       case 'profile_scrape': {

@@ -1,6 +1,7 @@
 import express, { Request, Response } from 'express';
 import { getIgClient, closeIgClient, scrapeFollowersHandler } from '../client/Instagram';
 import logger from '../config/logger';
+import { loadDmAiSettings, saveDmAiSettings } from '../config/dm-ai-settings';
 import mongoose from 'mongoose';
 import { signToken, verifyToken, getTokenFromRequest } from '../secret';
 import fs from 'fs/promises';
@@ -988,11 +989,12 @@ router.post('/monitor-dms', async (req: Request, res: Response) => {
   try {
     const igClient = await getIgClient((req as any).user.username);
     const runId = makeRunId();
+    const dmAiSettings = await loadDmAiSettings().catch(() => null);
     // DM monitoring can be long-running; start in background to avoid gateway timeouts.
     setImmediate(() => {
       logger.info(`[run:${runId}] 📬 DM monitoring started`);
       igClient
-        .monitorAndReplyToDMs(5, { runId })
+        .monitorAndReplyToDMs(5, { runId, aiSettings: dmAiSettings || undefined })
         .then(() => logger.info(`[run:${runId}] ✅ DM monitoring finished`))
         .catch((error) => logger.error(`[run:${runId}] ❌ DM monitoring error (background):`, error));
     });
@@ -1001,6 +1003,49 @@ router.post('/monitor-dms', async (req: Request, res: Response) => {
   } catch (error) {
     logger.error('DM monitoring error:', error);
     return res.status(500).json({ error: 'Failed to monitor DMs' });
+  }
+});
+
+// DM AI Settings (persona/voice/constraints for auto-replies)
+router.get('/dm/ai-settings', requireAuth, async (_req: Request, res: Response) => {
+  try {
+    const settings = await loadDmAiSettings();
+    return res.json({ success: true, settings });
+  } catch (error) {
+    logger.error('DM AI settings load error:', error);
+    return res.status(500).json({ error: 'Failed to load DM AI settings' });
+  }
+});
+
+router.put('/dm/ai-settings', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const body = req.body || {};
+    const normalized = {
+      enabled: body.enabled !== undefined ? !!body.enabled : undefined,
+      brandName: typeof body.brandName === 'string' ? body.brandName : undefined,
+      about: typeof body.about === 'string' ? body.about : undefined,
+      offer: typeof body.offer === 'string' ? body.offer : undefined,
+      tone: typeof body.tone === 'string' ? body.tone : undefined,
+      ctaStyle: typeof body.ctaStyle === 'string' ? body.ctaStyle : undefined,
+      emojiLevel: typeof body.emojiLevel === 'string' ? body.emojiLevel : undefined,
+      maxSentences: body.maxSentences !== undefined ? Number(body.maxSentences) : undefined,
+      maxChars: body.maxChars !== undefined ? Number(body.maxChars) : undefined,
+      signature: typeof body.signature === 'string' ? body.signature : undefined,
+      avoidTopics:
+        typeof body.avoidTopics === 'string'
+          ? body.avoidTopics
+              .split('\n')
+              .map((s: string) => s.trim())
+              .filter(Boolean)
+          : Array.isArray(body.avoidTopics)
+            ? body.avoidTopics
+            : undefined,
+    };
+    const saved = await saveDmAiSettings(normalized as any);
+    return res.json({ success: true, settings: saved });
+  } catch (error) {
+    logger.error('DM AI settings save error:', error);
+    return res.status(500).json({ error: 'Failed to save DM AI settings' });
   }
 });
 

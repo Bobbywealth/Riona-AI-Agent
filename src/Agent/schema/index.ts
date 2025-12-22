@@ -166,6 +166,38 @@ export const getAutomationCommandSchema = () => {
   };
 };
 
+export const getInstagramDmReplySchema = () => {
+  return {
+    description:
+      "Decide whether to reply to an Instagram DM, and if so, generate a short reply message.",
+    type: SchemaType.OBJECT,
+    properties: {
+      shouldReply: {
+        type: SchemaType.BOOLEAN,
+        description:
+          "Whether the bot should reply. Return false if the last message is not actionable, spam, or requires human attention.",
+        nullable: false,
+      },
+      reply: {
+        type: SchemaType.STRING,
+        description: "The DM reply text. Keep it short and natural.",
+        nullable: true,
+      },
+      confidence: {
+        type: SchemaType.NUMBER,
+        description: "Confidence score between 0 and 1.",
+        nullable: false,
+      },
+      reason: {
+        type: SchemaType.STRING,
+        description: "Brief reason for the decision (for logs).",
+        nullable: true,
+      },
+    },
+    required: ["shouldReply", "confidence"],
+  };
+};
+
 // Define the interface for the Tweet document
 interface ITweet extends Document {
   tweetContent: string;

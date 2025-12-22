@@ -14,6 +14,7 @@ import fs from "fs/promises";
 import path from "path";
 import { getShouldExitInteractions } from '../../api/agent';
 import { InteractionOptions, InteractionMode, EngagementMetrics, StoryOptions, StoryAIReplyOptions } from './types';
+import type { DmAiSettings } from '../../config/dm-ai-settings';
 import CommentedPost from "../../models/CommentedPost";
 import LanguageDetect from 'languagedetect';
 import mongoose from 'mongoose';
@@ -717,11 +718,15 @@ export class IgClient {
         }
     }
 
-    async monitorAndReplyToDMs(maxConversations: number = 5, options: { runId?: string } = {}) {
+    async monitorAndReplyToDMs(
+        maxConversations: number = 5,
+        options: { runId?: string; aiSettings?: DmAiSettings | null } = {}
+    ) {
         if (!this.page) throw new Error("Page not initialized");
         const page = this.page;
         const runId = options.runId ? String(options.runId) : null;
         const prefix = `${runId ? `[run:${runId}] ` : ''}📬 DM Monitor`;
+        const aiSettings = options.aiSettings || null;
         
         try {
             logger.info(`${prefix}: starting (maxConversations=${maxConversations})`);
@@ -941,21 +946,54 @@ export class IgClient {
                         
                         // Generate AI reply based on the conversation
                         const { runAgent } = await import('../../Agent');
-                        const { getInstagramCommentSchema } = await import('../../Agent/schema');
+                        const { getInstagramDmReplySchema } = await import('../../Agent/schema');
                         
                         const conversationHistory = messageTexts.join(' | ');
-                        const prompt = `You received an Instagram DM conversation. Recent messages: "${conversationHistory}". 
-Generate a friendly, helpful reply that:
-- Answers any questions they asked
-- Is conversational and natural (1-2 sentences max)
-- Matches their tone and energy
-- Uses appropriate emojis sparingly
-- Sounds like a real person, not a bot
-- Is relevant to what they said`;
+                        const aboutBlock = aiSettings
+                            ? `\nABOUT THIS ACCOUNT:\n- Brand: ${aiSettings.brandName}\n- About: ${aiSettings.about}\n- Offer: ${aiSettings.offer}\n- Tone: ${aiSettings.tone}\n- CTA style: ${aiSettings.ctaStyle}\n- Emoji level: ${aiSettings.emojiLevel}\n- Reply limits: maxSentences=${aiSettings.maxSentences}, maxChars=${aiSettings.maxChars}\n- Avoid topics: ${(aiSettings.avoidTopics || []).join(', ') || 'none'}\n- Signature: ${aiSettings.signature || '(none)'}\n`
+                            : '';
+
+                        if (aiSettings && aiSettings.enabled === false) {
+                            logger.info(`${prefix}: AI replies disabled by settings; skipping reply peer=${peerUsername ? `@${peerUsername}` : 'unknown'}`);
+                            processed++;
+                            continue;
+                        }
+
+                        const prompt = `You are responding as a real human running an Instagram business account.${aboutBlock}
+
+You received an Instagram DM conversation.
+Recent messages (most recent last): "${conversationHistory}"
+
+TASK:
+- Decide if you should reply (shouldReply).
+- If yes, write a reply that is helpful, natural, and matches the user's tone.
+
+RULES:
+- Keep it short: ${aiSettings?.maxSentences ?? 2} sentences max.
+- Keep it concise: ${aiSettings?.maxChars ?? 260} characters max.
+- Do NOT mention that you are an AI or a bot.
+- Do NOT be pushy. If CTA style is "question", end with ONE simple question.
+- If the message looks like spam, scams, harassment, or needs human attention, set shouldReply=false.
+- Avoid these topics: ${(aiSettings?.avoidTopics || []).join(', ') || 'none'}.
+
+Return JSON only.`;
                         
-                        const schema = getInstagramCommentSchema();
+                        const schema = getInstagramDmReplySchema();
                         const result = await runAgent(schema, prompt);
-                        const reply = (result[0]?.comment ?? "Thanks for reaching out! 😊") as string;
+                        const reply = (result?.reply ?? '').toString();
+                        const shouldAiReply = !!result?.shouldReply;
+                        const confidence = typeof result?.confidence === 'number' ? result.confidence : null;
+                        const reason = result?.reason ? String(result.reason) : '';
+
+                        logger.info(
+                            `${prefix}: AI decision peer=${peerUsername ? `@${peerUsername}` : 'unknown'} shouldReply=${shouldAiReply} confidence=${confidence ?? 'n/a'}${reason ? ` reason="${reason}"` : ''}`
+                        );
+
+                        if (!shouldAiReply || !reply.trim()) {
+                            logger.info(`${prefix}: skipping reply per AI decision peer=${peerUsername ? `@${peerUsername}` : 'unknown'}`);
+                            processed++;
+                            continue;
+                        }
                         
                         logger.info(`${prefix}: generated reply peer=${peerUsername ? `@${peerUsername}` : 'unknown'} reply="${reply.replace(/\s+/g, ' ').trim()}"`);
                         

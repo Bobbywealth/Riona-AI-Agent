@@ -958,6 +958,81 @@
                 </div>
                 <button class="btn-primary" onclick="monitorDMs()">📬 Monitor & Auto-Reply</button>
                 <button class="btn-info" onclick="clearDMCache()">🗑️ Clear Reply Cache</button>
+                <div class="collapsible mt-2" onclick="toggleCollapsible('dmAiSettingsSection')">
+                    <span>🤖 AI DM Reply Settings</span>
+                    <span class="arrow" id="dmAiSettingsSectionArrow">▼</span>
+                </div>
+                <div id="dmAiSettingsSection" class="collapsible-content">
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="dmAiEnabled" checked>
+                        <label style="margin: 0;">Enable AI auto-replies</label>
+                    </div>
+                    <div class="form-group">
+                        <label>Brand / Account Name</label>
+                        <input type="text" id="dmAiBrandName" placeholder="e.g. MarketingTeam.app">
+                    </div>
+                    <div class="form-group">
+                        <label>About this account (what you do)</label>
+                        <textarea id="dmAiAbout" placeholder="Describe the business, niche, audience, what you help with..."></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label>Offer (what you sell / next step)</label>
+                        <textarea id="dmAiOffer" placeholder="What you want to offer (call, link, free audit, etc)."></textarea>
+                    </div>
+                    <div class="flex gap-2">
+                        <div class="form-group" style="flex: 1;">
+                            <label>Tone</label>
+                            <select id="dmAiTone">
+                                <option value="friendly">Friendly</option>
+                                <option value="professional">Professional</option>
+                                <option value="consultative">Consultative</option>
+                                <option value="playful">Playful</option>
+                                <option value="hype">Hype</option>
+                            </select>
+                        </div>
+                        <div class="form-group" style="flex: 1;">
+                            <label>CTA Style</label>
+                            <select id="dmAiCtaStyle">
+                                <option value="question">End with a question</option>
+                                <option value="soft">Soft CTA</option>
+                                <option value="direct">Direct CTA</option>
+                                <option value="none">No CTA</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="flex gap-2">
+                        <div class="form-group" style="flex: 1;">
+                            <label>Emoji Level</label>
+                            <select id="dmAiEmojiLevel">
+                                <option value="none">None</option>
+                                <option value="low" selected>Low</option>
+                                <option value="medium">Medium</option>
+                            </select>
+                        </div>
+                        <div class="form-group" style="flex: 1;">
+                            <label>Max Sentences</label>
+                            <input type="number" id="dmAiMaxSentences" value="2" min="1" max="4">
+                        </div>
+                    </div>
+                    <div class="flex gap-2">
+                        <div class="form-group" style="flex: 1;">
+                            <label>Max Characters</label>
+                            <input type="number" id="dmAiMaxChars" value="260" min="80" max="600">
+                        </div>
+                        <div class="form-group" style="flex: 1;">
+                            <label>Signature (optional)</label>
+                            <input type="text" id="dmAiSignature" placeholder="e.g. - Bobby">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Avoid Topics (one per line)</label>
+                        <textarea id="dmAiAvoidTopics" placeholder="prices&#10;legal advice&#10;sensitive personal data"></textarea>
+                    </div>
+                    <div style="display:flex;gap:10px;flex-wrap:wrap;">
+                        <button class="btn-success" onclick="saveDmAiSettings()">💾 Save AI Settings</button>
+                        <button class="btn-secondary" onclick="loadDmAiSettings()">↻ Reload</button>
+                    </div>
+                </div>
                 <div class="collapsible mt-2" onclick="toggleCollapsible('sendDMSection')">
                     <span>📩 Send Manual DM</span>
                     <span class="arrow" id="sendDMSectionArrow">▼</span>
@@ -1728,6 +1803,50 @@
             }
         }
 
+        async function loadDmAiSettings() {
+            const result = await apiCall('/api/dm/ai-settings');
+            if (result.error) {
+                addLog('❌ Error loading DM AI settings: ' + result.error);
+                return;
+            }
+            const s = result.settings || {};
+            document.getElementById('dmAiEnabled').checked = s.enabled !== false;
+            document.getElementById('dmAiBrandName').value = s.brandName || '';
+            document.getElementById('dmAiAbout').value = s.about || '';
+            document.getElementById('dmAiOffer').value = s.offer || '';
+            document.getElementById('dmAiTone').value = s.tone || 'friendly';
+            document.getElementById('dmAiCtaStyle').value = s.ctaStyle || 'question';
+            document.getElementById('dmAiEmojiLevel').value = s.emojiLevel || 'low';
+            document.getElementById('dmAiMaxSentences').value = s.maxSentences ?? 2;
+            document.getElementById('dmAiMaxChars').value = s.maxChars ?? 260;
+            document.getElementById('dmAiSignature').value = s.signature || '';
+            const avoid = Array.isArray(s.avoidTopics) ? s.avoidTopics.join('\n') : '';
+            document.getElementById('dmAiAvoidTopics').value = avoid;
+            addLog('✅ DM AI settings loaded');
+        }
+
+        async function saveDmAiSettings() {
+            const payload = {
+                enabled: document.getElementById('dmAiEnabled').checked,
+                brandName: document.getElementById('dmAiBrandName').value,
+                about: document.getElementById('dmAiAbout').value,
+                offer: document.getElementById('dmAiOffer').value,
+                tone: document.getElementById('dmAiTone').value,
+                ctaStyle: document.getElementById('dmAiCtaStyle').value,
+                emojiLevel: document.getElementById('dmAiEmojiLevel').value,
+                maxSentences: parseInt(document.getElementById('dmAiMaxSentences').value, 10),
+                maxChars: parseInt(document.getElementById('dmAiMaxChars').value, 10),
+                signature: document.getElementById('dmAiSignature').value,
+                avoidTopics: document.getElementById('dmAiAvoidTopics').value,
+            };
+            const result = await apiCall('/api/dm/ai-settings', 'PUT', payload);
+            if (result.error) {
+                addLog('❌ Error saving DM AI settings: ' + result.error);
+                return;
+            }
+            addLog('✅ DM AI settings saved');
+        }
+
         async function scrapeFollowers() {
             const targetAccount = document.getElementById('targetAccount').value.trim();
             const maxFollowers = parseInt(document.getElementById('maxFollowers').value);
@@ -1983,6 +2102,7 @@
             
             // Load scheduled tasks on page load
             loadScheduledTasks();
+            loadDmAiSettings();
             refreshServerTime();
             startLocalClock();
             setInterval(refreshServerTime, 15000);
