@@ -1373,11 +1373,11 @@ Generate a friendly, helpful reply that:
         } else if (targetUsername) {
             const normalizedUsername = this.normalizeUsername(targetUsername);
             if (!normalizedUsername) {
-                console.log('❌ Username is required for direct profile targeting.');
+                logger.warn(`${runId ? `[run:${runId}] ` : ''}⚠️ Username is required for direct profile targeting.`);
                 return;
             }
             targetUsername = normalizedUsername;
-            console.log(`Navigating to @${targetUsername}'s profile...`);
+            logger.info(`${runId ? `[run:${runId}] ` : ''}👤 Navigating to profile target=@${targetUsername}`);
             await page.goto(`https://www.instagram.com/${targetUsername}/`, {
                 waitUntil: "networkidle2",
             });
@@ -1385,18 +1385,18 @@ Generate a friendly, helpful reply that:
             await this.handleNotificationPopup();
             
             // Click on the first post to open it
-            console.log(`Opening first post from @${targetUsername}...`);
+            logger.info(`${runId ? `[run:${runId}] ` : ''}🖼️ Opening first post target=@${targetUsername}`);
             // Try multiple selectors for posts
             await page.waitForSelector('a[href*="/p/"], a[href*="/reel/"]', { timeout: 10000 }).catch(() => null);
             const firstPost = await page.$('a[href*="/p/"]') || await page.$('a[href*="/reel/"]');
             if (firstPost) {
-                console.log(`Found post, clicking...`);
+                logger.info(`${runId ? `[run:${runId}] ` : ''}🖱️ Found post element, clicking target=@${targetUsername}`);
                 await firstPost.click();
                 await delay(4000);
                 await this.handleNotificationPopup();
-                console.log(`Post opened, starting interactions...`);
+                logger.info(`${runId ? `[run:${runId}] ` : ''}✅ Post opened, starting interactions target=@${targetUsername}`);
             } else {
-                console.log(`No posts found on @${targetUsername}'s profile. May be private or empty.`);
+                logger.warn(`${runId ? `[run:${runId}] ` : ''}⚠️ No posts found; profile may be private/empty target=@${targetUsername}`);
                 return;
             }
         }
@@ -1895,7 +1895,7 @@ IMPORTANT: Write in clear, proper English only. No typos, no gibberish, no rando
 
             for (let index = 1; index <= storyCount; index++) {
                 await this.showOverlayMessage(`👀 Viewing story ${index}/${storyCount}`, 'info');
-                logger.info(`${runId ? `[run:${runId}] ` : ''}👀 Viewing story ${index}/${storyCount}`);
+            logger.info(`${runId ? `[run:${runId}] ` : ''}👀 Viewing story ${index}/${storyCount}${normalizedTarget ? ` target=@${normalizedTarget}` : ''}`);
                 await delay(600);
                 let screenshotPath: string | null = null;
                 if (aiReplyOptions) {
@@ -1959,7 +1959,7 @@ IMPORTANT: Write in clear, proper English only. No typos, no gibberish, no rando
                     const liked = await this.tryLikeCurrentStory();
                     if (liked) {
                         console.log(`❤️ Liked story ${index}`);
-                        logger.info(`${runId ? `[run:${runId}] ` : ''}❤️ Liked story ${index}`);
+                        logger.info(`${runId ? `[run:${runId}] ` : ''}❤️ Liked story ${index}${normalizedTarget ? ` target=@${normalizedTarget}` : ''}`);
                         await this.showOverlayMessage(`❤️ Liked story ${index}`, 'success');
                     }
                 } else if (!repliedViaAI && Math.random() < reactionProbability) {
@@ -1967,7 +1967,7 @@ IMPORTANT: Write in clear, proper English only. No typos, no gibberish, no rando
                     const reacted = await this.tryReactToStory(reactionEmoji);
                     if (reacted) {
                         console.log(`💬 Reacted to story ${index} with ${reactionEmoji}`);
-                        logger.info(`${runId ? `[run:${runId}] ` : ''}💬 Reacted to story ${index} with ${reactionEmoji}`);
+                        logger.info(`${runId ? `[run:${runId}] ` : ''}💬 Reacted to story ${index} with ${reactionEmoji}${normalizedTarget ? ` target=@${normalizedTarget}` : ''}`);
                         await this.showOverlayMessage(`💬 Reacted with ${reactionEmoji}`, 'success');
                     }
                 }

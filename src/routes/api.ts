@@ -877,7 +877,8 @@ router.post('/interact', async (req: Request, res: Response) => {
     // Kick off the job in the background so reverse proxies (nginx) don't 504 on long runs.
     // The UI can follow progress via `/api/logs/recent`.
     setImmediate(() => {
-      logger.info(`[run:${runId}] 🚀 Campaign started (mode=${interactionOptions.mode || 'feed'}, maxPosts=${maxPosts || 5})`);
+      const targetLabel = targetUsername ? `, target=@${String(targetUsername).replace(/^@/, '')}` : '';
+      logger.info(`[run:${runId}] 🚀 Campaign started (mode=${interactionOptions.mode || 'feed'}, maxPosts=${maxPosts || 5}${targetLabel})`);
       igClient
         .interactWithPosts(targetUsername, maxPosts || 5, interactionOptions)
         .then(() => logger.info(`[run:${runId}] ✅ Campaign finished`))
@@ -1051,6 +1052,7 @@ router.post('/dm-file', async (req: Request, res: Response) => {
 router.post('/scrape-followers', async (req: Request, res: Response) => {
   const { targetAccount, maxFollowers } = req.body;
   try {
+    logger.info(`👥 Scrape followers started target=@${String(targetAccount || '').replace(/^@/, '')} maxFollowers=${maxFollowers || ''}`);
     const result = await scrapeFollowersHandler(targetAccount, maxFollowers);
     if (Array.isArray(result)) {
       if (req.query.download === '1') {
@@ -1064,7 +1066,9 @@ router.post('/scrape-followers', async (req: Request, res: Response) => {
     } else {
       res.json({ success: true, result });
     }
+    logger.info(`👥 Scrape followers finished target=@${String(targetAccount || '').replace(/^@/, '')}`);
   } catch (error) {
+    logger.error(`👥 Scrape followers error target=@${String(targetAccount || '').replace(/^@/, '')}:`, error as any);
     res.status(500).json({ success: false, error: (error as Error).message });
   }
 });
