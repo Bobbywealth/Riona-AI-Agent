@@ -1135,6 +1135,8 @@
         const aiChatHistory = [];
         let schedulerLoaded = false;
         let systemOverviewInterval = null;
+        // Cache scheduler tasks so we can edit them without embedding JSON in onclick handlers
+        window.__scheduledTasksById = window.__scheduledTasksById || {};
 
         // Lightweight status pills (no heavy UI framework required)
         function setPill(id, text, variant = 'neutral') {
@@ -2008,6 +2010,15 @@
                 tasksList.innerHTML = '<p style="text-align: center; color: #6b7280;">No scheduled tasks. Click "Create Scheduled Task" to add one.</p>';
                 return;
             }
+
+            // Update cache for editing
+            try {
+                const byId = {};
+                result.tasks.forEach((t) => { if (t && t._id) byId[t._id] = t; });
+                window.__scheduledTasksById = byId;
+            } catch {
+                // ignore
+            }
             
             tasksList.innerHTML = result.tasks.map(task => {
                 const nextRun = task.nextRun ? new Date(task.nextRun).toLocaleString() : 'Not scheduled';
@@ -2026,6 +2037,7 @@
                                 <span style="margin-left: 8px; padding: 2px 8px; border-radius: 4px; background: #${task.enabled ? '10b981' : 'ef4444'}; color: white; font-size: 12px;">${statusText}</span>
                             </div>
                             <div>
+                                <button class="btn-secondary" style="padding: 4px 8px; font-size: 12px;" onclick="showEditTaskModal('${task._id}')">✏️ Edit</button>
                                 <button class="btn-secondary" style="padding: 4px 8px; font-size: 12px;" onclick="toggleTask('${task._id}')">${task.enabled ? '⏸️ Disable' : '▶️ Enable'}</button>
                                 <button class="btn-danger" style="padding: 4px 8px; font-size: 12px;" onclick="deleteTask('${task._id}')">🗑️</button>
                             </div>
@@ -2345,17 +2357,128 @@
                 configSection.innerHTML = '';
             }
         }
-        
-        async function createTask(event) {
-            event.preventDefault();
+
+        function toDatetimeLocalValue(isoString) {
+            if (!isoString) return '';
+            const d = new Date(isoString);
+            if (isNaN(d.getTime())) return '';
+            const pad = (n) => String(n).padStart(2, '0');
+            // datetime-local expects local time, without timezone
+            return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+        }
+
+        function inferScheduleModeFromTask(task) {
+            if (!task) return { mode: 'once' };
+            if (task.scheduleType === 'once') return { mode: 'once' };
+            const expr = (task.cronExpression || '').trim();
+            // */N * * * *  -> every_minutes
+            let m = expr.match(/^\*\/(\d+)\s+\*\s+\*\s+\*\s+\*$/);
+            if (m) return { mode: 'every_minutes', everyMinutes: m[1] };
+            // M * * * * -> hourly
+            m = expr.match(/^(\d{1,2})\s+\*\s+\*\s+\*\s+\*$/);
+            if (m) return { mode: 'hourly', hourlyMinute: m[1] };
+            // 0 */H * * * -> every_hours
+            m = expr.match(/^0\s+\*\/(\d+)\s+\*\s+\*\s+\*$/);
+            if (m) return { mode: 'every_hours', everyHours: m[1] };
+            // M H * * * -> daily
+            m = expr.match(/^(\d{1,2})\s+(\d{1,2})\s+\*\s+\*\s+\*$/);
+            if (m) {
+                const mm = String(m[1]).padStart(2, '0');
+                const hh = String(m[2]).padStart(2, '0');
+                return { mode: 'daily', dailyTime: `${hh}:${mm}` };
+            }
+            return { mode: 'cron', cronExpression: expr };
+        }
+
+        function fillTaskConfigFields(task) {
+            const taskType = document.getElementById('taskType')?.value;
+            const cfg = task?.config || {};
+
+            const setIfExists = (id, value) => {
+                const el = document.getElementById(id);
+                if (!el) return;
+                if (el.type === 'checkbox') el.checked = !!value;
+                else el.value = value ?? '';
+            };
+
+            if (taskType === 'campaign') {
+                setIfExists('configMode', cfg.mode || 'feed');
+                setIfExists('configMaxPosts', cfg.maxPosts ?? 10);
+                setIfExists('configHashtags', Array.isArray(cfg.hashtags) ? cfg.hashtags.join(', ') : '');
+                setIfExists('configLocation', cfg.locationPath || '');
+                setIfExists('configEnglishOnly', !!cfg.englishOnly);
+            } else if (taskType === 'stories') {
+                setIfExists('configStoryCount', cfg.storyCount ?? 10);
+                setIfExists('configStoryTarget', cfg.storyTarget || '');
+            } else if (taskType === 'dm_monitor') {
+                setIfExists('configAutoReply', cfg.autoReply !== false);
+            } else if (taskType === 'profile_scrape') {
+                setIfExists('configScrapeTarget', cfg.scrapeTarget || '');
+                setIfExists('configMaxFollowers', cfg.maxFollowers ?? 50);
+            }
+        }
+
+        function showEditTaskModal(taskId) {
+            const task = (window.__scheduledTasksById || {})[taskId];
+            if (!task) {
+                alert('Task not found. Try refreshing the scheduler list.');
+                return;
+            }
+
+            showCreateTaskModal();
+
+            // Update modal title + submit handler
+            const modal = document.getElementById('taskModal');
+            if (!modal) return;
+            const title = modal.querySelector('h2');
+            if (title) title.textContent = 'Edit Scheduled Task';
+
+            const form = document.getElementById('taskForm');
+            if (form) form.setAttribute('onsubmit', `updateTask(event, '${taskId}')`);
+
+            const submitBtn = modal.querySelector('button[type="submit"]');
+            if (submitBtn) submitBtn.textContent = '💾 Save Changes';
+
+            // Fill common fields
+            document.getElementById('taskName').value = task.name || '';
+            document.getElementById('taskType').value = task.taskType || '';
+            updateTaskConfig();
+            fillTaskConfigFields(task);
+
+            document.getElementById('taskTimezone').value = task.timezone || 'America/New_York';
+            document.getElementById('taskEnabled').checked = task.enabled !== false;
+
+            // Fill schedule fields
+            const inferred = inferScheduleModeFromTask(task);
+            document.getElementById('scheduleMode').value = inferred.mode || 'cron';
+            toggleScheduleMode();
+
+            if (inferred.mode === 'once') {
+                document.getElementById('runAt').value = toDatetimeLocalValue(task.runAt);
+            } else if (inferred.mode === 'every_minutes') {
+                document.getElementById('everyMinutes').value = inferred.everyMinutes || '15';
+            } else if (inferred.mode === 'hourly') {
+                document.getElementById('hourlyMinute').value = inferred.hourlyMinute || '0';
+            } else if (inferred.mode === 'every_hours') {
+                document.getElementById('everyHours').value = inferred.everyHours || '2';
+            } else if (inferred.mode === 'daily') {
+                document.getElementById('dailyTime').value = inferred.dailyTime || '09:00';
+            } else {
+                document.getElementById('cronExpression').value = task.cronExpression || '';
+            }
+
+            updateSchedulePreview();
+        }
+
+        function collectTaskFormPayload() {
             const taskType = document.getElementById('taskType').value;
             const config = {};
-            
+
             if (taskType === 'campaign') {
                 config.mode = document.getElementById('configMode').value;
                 config.maxPosts = parseInt(document.getElementById('configMaxPosts').value) || 10;
                 const hashtags = document.getElementById('configHashtags').value;
-                if (hashtags) config.hashtags = hashtags.split(',').map(h => h.trim());
+                if (hashtags) config.hashtags = hashtags.split(',').map(h => h.trim()).filter(Boolean);
                 const location = document.getElementById('configLocation').value;
                 if (location) config.locationPath = location;
                 config.englishOnly = document.getElementById('configEnglishOnly').checked;
@@ -2369,7 +2492,7 @@
                 config.scrapeTarget = document.getElementById('configScrapeTarget').value;
                 config.maxFollowers = parseInt(document.getElementById('configMaxFollowers').value) || 50;
             }
-            
+
             const mode = document.getElementById('scheduleMode').value;
             const runAtVal = document.getElementById('runAt')?.value;
             const tz = document.getElementById('taskTimezone').value;
@@ -2398,22 +2521,40 @@
                 cronExpression = document.getElementById('cronExpression').value;
             }
 
-            const payload = {
+            return {
                 name: document.getElementById('taskName').value,
-                taskType: taskType,
+                taskType,
                 scheduleType,
                 cronExpression,
                 runAt,
                 timezone: tz,
-                config: config,
+                config,
                 enabled: document.getElementById('taskEnabled').checked
             };
+        }
+        
+        async function createTask(event) {
+            event.preventDefault();
+            const payload = collectTaskFormPayload();
             
             const result = await apiCall('/api/scheduled-tasks', 'POST', payload);
             if (result.error) {
                 alert('Error: ' + result.error);
             } else {
                 addLog(`✅ Scheduled task "${payload.name}" created`);
+                closeTaskModal();
+                loadScheduledTasks();
+            }
+        }
+
+        async function updateTask(event, id) {
+            event.preventDefault();
+            const payload = collectTaskFormPayload();
+            const result = await apiCall(`/api/scheduled-tasks/${id}`, 'PUT', payload);
+            if (result.error) {
+                alert('Error: ' + result.error);
+            } else {
+                addLog(`✅ Scheduled task "${payload.name}" updated`);
                 closeTaskModal();
                 loadScheduledTasks();
             }
