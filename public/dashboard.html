@@ -1865,12 +1865,7 @@
                 }
             }
             loadProxySettings();
-            
-            // Auto-fill username if saved
-            const savedUsername = localStorage.getItem('savedUsername');
-            if (savedUsername) {
-                document.getElementById('loginUsername').value = savedUsername;
-            }
+            // (Note) avoid redeclaring savedUsername here — duplicate declarations break the entire dashboard script.
             
             // Add toggle listeners
             document.getElementById('proxyEnabled').addEventListener('change', toggleProxyFields);
