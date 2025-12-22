@@ -818,7 +818,20 @@ export class IgClient {
                             const parts = clean.split('/').filter(Boolean);
                             const first = parts[0] || null;
                             if (!first) return null;
-                            if (first === 'direct' || first === 'accounts' || first === 'explore') return null;
+                            // Filter out non-profile routes so we don't mis-detect "@reels" etc.
+                            const blocked = new Set([
+                                'direct',
+                                'accounts',
+                                'explore',
+                                'reels',
+                                'p',
+                                'stories',
+                                'tv',
+                                'about',
+                                'privacy',
+                                'terms',
+                            ]);
+                            if (blocked.has(first)) return null;
                             return first;
                         };
 
@@ -921,7 +934,7 @@ export class IgClient {
                     
                     if (!lastMessageText || lastMessageText.length < 2) {
                         logger.info(`${prefix}: skipped (no valid last message) peer=${peerUsername ? `@${peerUsername}` : 'unknown'} title="${conversationTitle}"`);
-                        index++;
+                        processed++;
                         continue;
                     }
                     
@@ -944,7 +957,7 @@ export class IgClient {
 
                         if (!lastMessageText || isPlaceholderOnly(messageTexts)) {
                             logger.info(`${prefix}: skipped (still placeholder after refresh) peer=${peerUsername ? `@${peerUsername}` : 'unknown'}`);
-                            index++;
+                            processed++;
                             continue;
                         }
                     }
@@ -954,7 +967,7 @@ export class IgClient {
                     const containsAttachment = normalizedLastText.includes('sent an attachment');
                     if (containsAttachment) {
                         logger.info(`${prefix}: skipped (attachment/no text) peer=${peerUsername ? `@${peerUsername}` : 'unknown'}`);
-                        index++;
+                        processed++;
                         continue;
                     }
                     
@@ -1965,92 +1978,108 @@ IMPORTANT: Write in clear, proper English only. No typos, no gibberish, no rando
             }
 
             for (let index = 1; index <= storyCount; index++) {
-                await this.showOverlayMessage(`👀 Viewing story ${index}/${storyCount}`, 'info');
-            logger.info(`${runId ? `[run:${runId}] ` : ''}👀 Viewing story ${index}/${storyCount}${normalizedTarget ? ` target=@${normalizedTarget}` : ''}`);
-                await delay(600);
-                let screenshotPath: string | null = null;
-                if (aiReplyOptions) {
-                    screenshotPath = await this.captureStoryScreenshot(index, normalizedTarget || source);
-                    if (screenshotPath) {
-                        console.log(`📸 Story ${index} screenshot saved to ${screenshotPath}`);
-                        logger.info(`${runId ? `[run:${runId}] ` : ''}📸 Screenshot saved: ${screenshotPath}`);
-                    }
-                }
+                try {
+                    await this.logStep(runId, 'STORY: view', { index, total: storyCount, target: normalizedTarget ? `@${normalizedTarget}` : 'feed' });
+                    await this.showOverlayMessage(`👀 Viewing story ${index}/${storyCount}`, 'info');
+                    logger.info(`${runId ? `[run:${runId}] ` : ''}👀 Viewing story ${index}/${storyCount}${normalizedTarget ? ` target=@${normalizedTarget}` : ''}`);
+                    await delay(600);
 
-                let repliedViaAI = false;
-                if (
-                    aiReplyOptions &&
-                    screenshotPath &&
-                    aiRepliesSent < (aiReplyOptions.maxReplies ?? 3)
-                ) {
-                    const decision = await this.analyzeStoryFrame(
-                        screenshotPath,
-                        aiReplyOptions,
-                        { index, targetUsername: normalizedTarget }
-                    );
-                    if (decision?.shouldReply && decision.replyText) {
-                        const sent = await this.replyToStoryWithText(decision.replyText);
-                        if (sent) {
-                            aiRepliesSent++;
-                            repliedViaAI = true;
-                            const confidencePct = (decision.confidence * 100).toFixed(0);
-                            await this.showOverlayMessage(
-                                `🤖 AI replied to story ${index} (${confidencePct}%)`,
-                                'success'
-                            );
+                    let screenshotPath: string | null = null;
+                    if (aiReplyOptions) {
+                        screenshotPath = await this.captureStoryScreenshot(index, normalizedTarget || source);
+                        if (screenshotPath) {
+                            console.log(`📸 Story ${index} screenshot saved to ${screenshotPath}`);
+                            logger.info(`${runId ? `[run:${runId}] ` : ''}📸 Screenshot saved: ${screenshotPath}`);
+                        }
+                    }
+
+                    let repliedViaAI = false;
+                    if (
+                        aiReplyOptions &&
+                        screenshotPath &&
+                        aiRepliesSent < (aiReplyOptions.maxReplies ?? 3)
+                    ) {
+                        const decision = await this.analyzeStoryFrame(
+                            screenshotPath,
+                            aiReplyOptions,
+                            { index, targetUsername: normalizedTarget }
+                        );
+                        if (decision?.shouldReply && decision.replyText) {
+                            const sent = await this.replyToStoryWithText(decision.replyText);
+                            if (sent) {
+                                aiRepliesSent++;
+                                repliedViaAI = true;
+                                const confidencePct = (decision.confidence * 100).toFixed(0);
+                                await this.showOverlayMessage(
+                                    `🤖 AI replied to story ${index} (${confidencePct}%)`,
+                                    'success'
+                                );
+                                console.log(
+                                    `🤖 AI replied to story ${index}: "${decision.replyText}" (${confidencePct}% confidence)`
+                                );
+                                logger.info(
+                                    `${runId ? `[run:${runId}] ` : ''}🤖 AI replied to story ${index} (${confidencePct}%): "${decision.replyText}"`
+                                );
+                            } else {
+                                console.warn('⚠️ AI story reply failed to send.');
+                                logger.warn(`${runId ? `[run:${runId}] ` : ''}⚠️ AI story reply failed to send (story ${index})`);
+                            }
+                        } else if (decision) {
                             console.log(
-                                `🤖 AI replied to story ${index}: "${decision.replyText}" (${confidencePct}% confidence)`
+                                `🤖 Skipping story ${index} (confidence ${(decision.confidence * 100).toFixed(
+                                    0
+                                )}%)`
                             );
                             logger.info(
-                                `${runId ? `[run:${runId}] ` : ''}🤖 AI replied to story ${index} (${confidencePct}%): "${decision.replyText}"`
+                                `${runId ? `[run:${runId}] ` : ''}🤖 Skipping story ${index} (confidence ${(
+                                    decision.confidence * 100
+                                ).toFixed(0)}%)`
                             );
-                        } else {
-                            console.warn('⚠️ AI story reply failed to send.');
-                            logger.warn(`${runId ? `[run:${runId}] ` : ''}⚠️ AI story reply failed to send (story ${index})`);
                         }
-                    } else if (decision) {
-                        console.log(
-                            `🤖 Skipping story ${index} (confidence ${(decision.confidence * 100).toFixed(
-                                0
-                            )}%)`
-                        );
-                        logger.info(
-                            `${runId ? `[run:${runId}] ` : ''}🤖 Skipping story ${index} (confidence ${(
-                                decision.confidence * 100
-                            ).toFixed(0)}%)`
-                        );
                     }
-                }
 
-                const watchTime = Math.floor(Math.random() * (maxWatchTimeMs - minWatchTimeMs)) + minWatchTimeMs;
-                await this.humanLikePause(Math.max(1500, watchTime - 1500), watchTime + 500);
+                    const watchTime = Math.floor(Math.random() * (maxWatchTimeMs - minWatchTimeMs)) + minWatchTimeMs;
+                    await this.humanLikePause(Math.max(1500, watchTime - 1500), watchTime + 500);
 
-                if (!repliedViaAI && Math.random() < likeProbability) {
-                    this.step(runId, 'Stories: click Like', { index });
-                    const liked = await this.tryLikeCurrentStory();
-                    if (liked) {
-                        console.log(`❤️ Liked story ${index}`);
-                        logger.info(`${runId ? `[run:${runId}] ` : ''}❤️ Liked story ${index}${normalizedTarget ? ` target=@${normalizedTarget}` : ''}`);
-                        await this.showOverlayMessage(`❤️ Liked story ${index}`, 'success');
+                    if (!repliedViaAI && Math.random() < likeProbability) {
+                        this.step(runId, 'Stories: click Like', { index });
+                        const liked = await this.tryLikeCurrentStory();
+                        if (liked) {
+                            console.log(`❤️ Liked story ${index}`);
+                            logger.info(`${runId ? `[run:${runId}] ` : ''}❤️ Liked story ${index}${normalizedTarget ? ` target=@${normalizedTarget}` : ''}`);
+                            await this.showOverlayMessage(`❤️ Liked story ${index}`, 'success');
+                        }
+                    } else if (!repliedViaAI && Math.random() < reactionProbability) {
+                        this.step(runId, 'Stories: click React', { index, emoji: reactionEmoji });
+                        const reacted = await this.tryReactToStory(reactionEmoji);
+                        if (reacted) {
+                            console.log(`💬 Reacted to story ${index} with ${reactionEmoji}`);
+                            logger.info(`${runId ? `[run:${runId}] ` : ''}💬 Reacted to story ${index} with ${reactionEmoji}${normalizedTarget ? ` target=@${normalizedTarget}` : ''}`);
+                            await this.showOverlayMessage(`💬 Reacted with ${reactionEmoji}`, 'success');
+                        }
                     }
-                } else if (!repliedViaAI && Math.random() < reactionProbability) {
-                    this.step(runId, 'Stories: click React', { index, emoji: reactionEmoji });
-                    const reacted = await this.tryReactToStory(reactionEmoji);
-                    if (reacted) {
-                        console.log(`💬 Reacted to story ${index} with ${reactionEmoji}`);
-                        logger.info(`${runId ? `[run:${runId}] ` : ''}💬 Reacted to story ${index} with ${reactionEmoji}${normalizedTarget ? ` target=@${normalizedTarget}` : ''}`);
-                        await this.showOverlayMessage(`💬 Reacted with ${reactionEmoji}`, 'success');
-                    }
-                }
 
-                this.step(runId, 'Stories: advance', { index });
-                const advanced = await this.goToNextStory();
-                if (!advanced) {
-                    console.log('Reached the end of available stories.');
-                    logger.info(`${runId ? `[run:${runId}] ` : ''}🏁 Reached the end of available stories`);
-                    break;
+                    this.step(runId, 'Stories: advance', { index });
+                    const advanced = await this.goToNextStory();
+                    if (!advanced) {
+                        console.log('Reached the end of available stories.');
+                        logger.info(`${runId ? `[run:${runId}] ` : ''}🏁 Reached the end of available stories`);
+                        break;
+                    }
+                    await delay(1200);
+                } catch (err: any) {
+                    const msg = String(err?.message || err);
+                    // Common transient when IG navigates/reloads during actions
+                    if (msg.toLowerCase().includes('execution context was destroyed')) {
+                        logger.warn(`${runId ? `[run:${runId}] ` : ''}⚠️ Story step interrupted by navigation; retrying viewer (story ${index})`);
+                        await this.logStep(runId, 'STORY: recover after navigation', { index });
+                        const ok = await this.ensureStoryViewerOpen(normalizedTarget);
+                        if (!ok) break;
+                        await delay(1200);
+                        continue;
+                    }
+                    throw err;
                 }
-                await delay(1200);
             }
 
             await this.showOverlayMessage('Stories session complete ✅', 'success');
