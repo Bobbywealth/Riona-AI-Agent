@@ -318,6 +318,21 @@ router.get('/status', async (req: Request, res: Response) => {
   });
 });
 
+// Server time endpoint (useful for scheduling UX)
+router.get('/time', async (_req: Request, res: Response) => {
+  const now = new Date();
+  const tz =
+    process.env.TZ ||
+    Intl.DateTimeFormat().resolvedOptions().timeZone ||
+    'UTC';
+  return res.json({
+    serverTimeIso: now.toISOString(),
+    serverEpochMs: now.getTime(),
+    serverTimezone: tz,
+    uptimeSec: Math.round(process.uptime()),
+  });
+});
+
 // Session refresh endpoint
 router.post('/session/refresh', requireAuth, async (req: Request, res: Response) => {
   try {
@@ -1234,26 +1249,57 @@ router.get('/scheduled-tasks', requireAuth, async (req: Request, res: Response) 
 // Create a new scheduled task
 router.post('/scheduled-tasks', requireAuth, async (req: Request, res: Response) => {
   try {
-    const { name, taskType, cronExpression, timezone, config, enabled } = req.body;
+    const { name, taskType, cronExpression, timezone, config, enabled, scheduleType, runAt } = req.body;
     
-    if (!name || !taskType || !cronExpression) {
-      return res.status(400).json({ error: 'Name, taskType, and cronExpression are required' });
+    if (!name || !taskType) {
+      return res.status(400).json({ error: 'Name and taskType are required' });
     }
 
-    // Validate cron expression
-    try {
-      new CronJob(cronExpression, () => {}, null, false, timezone || 'America/New_York');
-    } catch (error) {
-      return res.status(400).json({ error: 'Invalid cron expression' });
+    const resolvedScheduleType: 'cron' | 'once' =
+      scheduleType === 'once' || scheduleType === 'cron'
+        ? scheduleType
+        : runAt
+          ? 'once'
+          : 'cron';
+
+    let resolvedCron: string | undefined = undefined;
+    let resolvedRunAt: Date | undefined = undefined;
+
+    if (resolvedScheduleType === 'once') {
+      if (!runAt) {
+        return res.status(400).json({ error: 'runAt is required for one-time schedules' });
+      }
+      const parsed = new Date(runAt);
+      if (Number.isNaN(parsed.getTime())) {
+        return res.status(400).json({ error: 'Invalid runAt date/time' });
+      }
+      if (parsed.getTime() < Date.now() - 5_000) {
+        return res.status(400).json({ error: 'runAt must be in the future' });
+      }
+      resolvedRunAt = parsed;
+    } else {
+      if (!cronExpression) {
+        return res.status(400).json({ error: 'cronExpression is required for cron schedules' });
+      }
+      // Validate cron expression
+      try {
+        new CronJob(cronExpression, () => {}, null, false, timezone || 'America/New_York');
+      } catch (error) {
+        return res.status(400).json({ error: 'Invalid cron expression' });
+      }
+      resolvedCron = cronExpression;
     }
 
     const task = new ScheduledTask({
       name,
       taskType,
-      cronExpression,
+      scheduleType: resolvedScheduleType,
+      cronExpression: resolvedCron,
+      runAt: resolvedRunAt,
       timezone: timezone || 'America/New_York',
       config: config || {},
-      enabled: enabled !== undefined ? enabled : true
+      enabled: enabled !== undefined ? enabled : true,
+      nextRun: resolvedScheduleType === 'once' ? resolvedRunAt : undefined,
     });
 
     await task.save();
@@ -1268,28 +1314,52 @@ router.post('/scheduled-tasks', requireAuth, async (req: Request, res: Response)
 router.put('/scheduled-tasks/:id', requireAuth, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { name, taskType, cronExpression, timezone, config, enabled } = req.body;
+    const { name, taskType, cronExpression, timezone, config, enabled, scheduleType, runAt } = req.body;
 
     const task = await ScheduledTask.findById(id);
     if (!task) {
       return res.status(404).json({ error: 'Task not found' });
     }
 
-    if (cronExpression) {
-      // Validate cron expression
-      try {
-        new CronJob(cronExpression, () => {}, null, false, timezone || task.timezone);
-      } catch (error) {
-        return res.status(400).json({ error: 'Invalid cron expression' });
-      }
-      task.cronExpression = cronExpression;
-    }
+    const resolvedScheduleType: 'cron' | 'once' | undefined =
+      scheduleType === 'once' || scheduleType === 'cron' ? scheduleType : undefined;
+    if (resolvedScheduleType) task.scheduleType = resolvedScheduleType;
 
     if (name) task.name = name;
     if (taskType) task.taskType = taskType;
     if (timezone) task.timezone = timezone;
     if (config) task.config = { ...task.config, ...config };
     if (enabled !== undefined) task.enabled = enabled;
+
+    const activeType: 'cron' | 'once' = (task as any).scheduleType || 'cron';
+    if (activeType === 'once') {
+      if (runAt) {
+        const parsed = new Date(runAt);
+        if (Number.isNaN(parsed.getTime())) {
+          return res.status(400).json({ error: 'Invalid runAt date/time' });
+        }
+        if (parsed.getTime() < Date.now() - 5_000) {
+          return res.status(400).json({ error: 'runAt must be in the future' });
+        }
+        (task as any).runAt = parsed;
+        task.nextRun = parsed;
+      }
+      // Clear cronExpression when in once mode (optional but avoids confusion)
+      (task as any).cronExpression = undefined;
+    } else {
+      if (cronExpression) {
+        // Validate cron expression
+        try {
+          new CronJob(cronExpression, () => {}, null, false, timezone || task.timezone);
+        } catch (error) {
+          return res.status(400).json({ error: 'Invalid cron expression' });
+        }
+        (task as any).cronExpression = cronExpression;
+      }
+      // Clear runAt when in cron mode
+      (task as any).runAt = undefined;
+      task.nextRun = undefined;
+    }
 
     await task.save();
     return res.json({ success: true, task });

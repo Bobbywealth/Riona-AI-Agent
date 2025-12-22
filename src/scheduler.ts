@@ -8,7 +8,9 @@ import { IGpassword, IGusername } from './secret';
 type JobInfo = {
   taskId: string;
   name: string;
-  cronExpression: string;
+  scheduleType: 'cron' | 'once';
+  cronExpression?: string;
+  runAt?: string | null;
   timezone: string;
   enabled: boolean;
   nextRun: string | null;
@@ -95,6 +97,19 @@ async function executeScheduledTask(task: any) {
     await task.save().catch(() => undefined);
 
     logger.info(`${prefix} ✅ Completed scheduled task "${task.name}"`);
+
+    // One-time schedules should disable after running once.
+    if ((task.scheduleType || 'cron') === 'once') {
+      try {
+        await ScheduledTask.findByIdAndUpdate(task._id, {
+          enabled: false,
+          nextRun: null,
+        });
+        logger.info(`${prefix} ⏹️ One-time task disabled after execution`);
+      } catch {
+        // ignore
+      }
+    }
   } catch (error) {
     logger.error(`${prefix} ❌ Scheduled task failed:`, error);
   } finally {
@@ -120,12 +135,17 @@ async function refreshJobs() {
     for (const task of enabledTasks as any[]) {
       const taskId = String(task._id);
       const tz = task.timezone || 'America/New_York';
+      const scheduleType: 'cron' | 'once' = (task.scheduleType || 'cron') as any;
 
       const existing = jobsByTaskId.get(taskId);
       if (existing) {
         // If cron or timezone changed, recreate the job
         const existingCron = (existing as any).cronTime?.source;
-        if (existingCron !== task.cronExpression) {
+        const existingIsDate = !(existing as any).cronTime?.source;
+        const shouldRecreate =
+          (scheduleType === 'cron' && (existingIsDate || existingCron !== task.cronExpression)) ||
+          (scheduleType === 'once' && !existingIsDate);
+        if (shouldRecreate) {
           existing.stop();
           jobsByTaskId.delete(taskId);
         } else {
@@ -134,26 +154,62 @@ async function refreshJobs() {
       }
 
       try {
-        const job = new CronJob(
-          task.cronExpression,
-          () => {
-            executeScheduledTask(task);
-          },
-          null,
-          true,
-          tz
-        );
-        jobsByTaskId.set(taskId, job);
-        logger.info(`⏰ Scheduler armed: "${task.name}" @ ${task.cronExpression} (${tz})`);
+        let job: CronJob;
+        if (scheduleType === 'once') {
+          const runAt = task.runAt ? new Date(task.runAt) : null;
+          if (!runAt || Number.isNaN(runAt.getTime())) {
+            logger.error(`⏰ Scheduler: one-time task "${task.name}" missing/invalid runAt`);
+            continue;
+          }
+          if (runAt.getTime() < Date.now() - 5_000) {
+            logger.warn(`⏰ Scheduler: one-time task "${task.name}" runAt is in the past; disabling`);
+            await ScheduledTask.findByIdAndUpdate(task._id, { enabled: false, nextRun: null });
+            continue;
+          }
+          job = new CronJob(
+            runAt,
+            () => {
+              executeScheduledTask(task);
+            },
+            null,
+            true
+          );
+          jobsByTaskId.set(taskId, job);
+          task.nextRun = runAt;
+          await task.save().catch(() => undefined);
+          logger.info(`⏰ Scheduler armed (once): "${task.name}" @ ${runAt.toISOString()}`);
+        } else {
+          job = new CronJob(
+            task.cronExpression,
+            () => {
+              executeScheduledTask(task);
+            },
+            null,
+            true,
+            tz
+          );
+          jobsByTaskId.set(taskId, job);
+          // best-effort nextRun persistence for UI
+          try {
+            const next = (job as any).nextDate?.();
+            task.nextRun = next ? new Date(String(next)) : undefined;
+            await task.save().catch(() => undefined);
+          } catch {
+            // ignore
+          }
+          logger.info(`⏰ Scheduler armed: "${task.name}" @ ${task.cronExpression} (${tz})`);
+        }
       } catch (error) {
-        logger.error(`⏰ Scheduler: invalid cron for task "${task.name}": ${task.cronExpression}`, error);
+        logger.error(`⏰ Scheduler: failed to arm task "${task.name}"`, error);
       }
     }
 
     lastLoadedTasks = enabledTasks.map((t: any) => ({
       taskId: String(t._id),
       name: t.name,
+      scheduleType: (t.scheduleType || 'cron'),
       cronExpression: t.cronExpression,
+      runAt: t.runAt ? new Date(t.runAt).toISOString() : null,
       timezone: t.timezone || 'America/New_York',
       enabled: !!t.enabled,
       nextRun: (() => {

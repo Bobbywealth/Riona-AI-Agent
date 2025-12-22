@@ -995,6 +995,15 @@
                     <div class="card-icon">⏰</div>
                     <h2>Task Scheduler</h2>
                 </div>
+                <div id="serverTimeBar" style="display:flex;gap:10px;align-items:center;justify-content:space-between;margin: 0 0 10px 0; padding: 10px 12px; border: 1px solid #e5e7eb; border-radius: 10px; background: #f9fafb;">
+                    <div style="font-size: 12px; color:#374151;">
+                        <strong>Server Time</strong>: <span id="serverTimeValue">Loading...</span>
+                        <span style="margin-left:8px;color:#6b7280;">(<span id="serverTzValue">...</span>)</span>
+                    </div>
+                    <div style="font-size: 12px; color:#6b7280;">
+                        <strong>Your Time</strong>: <span id="localTimeValue">--:--:--</span>
+                    </div>
+                </div>
                 <div class="mb-2">
                     <button class="btn-primary" onclick="showCreateTaskModal()">➕ Create Scheduled Task</button>
                     <button class="btn-info" onclick="loadScheduledTasks()">🔄 Refresh</button>
@@ -1909,6 +1918,9 @@
             
             // Load scheduled tasks on page load
             loadScheduledTasks();
+            refreshServerTime();
+            startLocalClock();
+            setInterval(refreshServerTime, 15000);
             refreshRightRail();
 
             // Keep the right rail fresh (lightweight)
@@ -1935,6 +1947,9 @@
                 const lastRun = task.lastRun ? new Date(task.lastRun).toLocaleString() : 'Never';
                 const statusClass = task.enabled ? 'success' : 'error';
                 const statusText = task.enabled ? '✅ Enabled' : '❌ Disabled';
+                const scheduleLabel = (task.scheduleType === 'once')
+                    ? `Run once @ ${task.runAt ? new Date(task.runAt).toLocaleString() : 'N/A'}`
+                    : (task.cronExpression || 'N/A');
                 
                 return `
                     <div style="border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px; margin-bottom: 10px; background: ${task.enabled ? '#f0fdf4' : '#fef2f2'};">
@@ -1950,7 +1965,7 @@
                         </div>
                         <div style="font-size: 12px; color: #6b7280;">
                             <div>📋 Type: <strong>${task.taskType}</strong></div>
-                            <div>⏰ Schedule: <strong>${task.cronExpression}</strong></div>
+                            <div>⏰ Schedule: <strong>${scheduleLabel}</strong></div>
                             <div>🌍 Timezone: <strong>${task.timezone || 'America/New_York'}</strong></div>
                             <div>🔄 Next Run: <strong>${nextRun}</strong></div>
                             <div>📊 Last Run: <strong>${lastRun}</strong> (${task.runCount || 0} times)</div>
@@ -1983,8 +1998,22 @@
                             </select>
                         </div>
                         <div class="form-group">
+                            <label>Schedule Type *</label>
+                            <select id="scheduleType" onchange="toggleScheduleFields()" required>
+                                <option value="once" selected>Date/Time (run once)</option>
+                                <option value="cron">Cron (advanced)</option>
+                            </select>
+                        </div>
+                        <div class="form-group" id="runAtGroup">
+                            <label>Run At (your local time) *</label>
+                            <input type="datetime-local" id="runAt" required>
+                            <small style="display:block;color:#6b7280;margin-top:4px;">
+                                Tip: compare with the <strong>Server Time</strong> bar on the scheduler card to avoid timezone confusion.
+                            </small>
+                        </div>
+                        <div class="form-group hidden" id="cronGroup">
                             <label>Cron Expression *</label>
-                            <input type="text" id="cronExpression" placeholder="0 9 * * * (9 AM daily)" required>
+                            <input type="text" id="cronExpression" placeholder="0 9 * * * (9 AM daily)">
                             <small style="display:block;color:#6b7280;margin-top:4px;">
                                 Format: minute hour day month weekday<br>
                                 Examples: "0 9 * * *" (9 AM daily), "0 */6 * * *" (every 6 hours), "0 9 * * 1" (9 AM Mondays)
@@ -2014,6 +2043,27 @@
             `;
             document.body.appendChild(modal);
             updateTaskConfig();
+            toggleScheduleFields();
+        }
+
+        function toggleScheduleFields() {
+            const scheduleType = document.getElementById('scheduleType')?.value || 'once';
+            const runAtGroup = document.getElementById('runAtGroup');
+            const cronGroup = document.getElementById('cronGroup');
+            const runAt = document.getElementById('runAt');
+            const cron = document.getElementById('cronExpression');
+
+            if (scheduleType === 'cron') {
+                runAtGroup?.classList.add('hidden');
+                cronGroup?.classList.remove('hidden');
+                if (runAt) runAt.required = false;
+                if (cron) cron.required = true;
+            } else {
+                runAtGroup?.classList.remove('hidden');
+                cronGroup?.classList.add('hidden');
+                if (runAt) runAt.required = true;
+                if (cron) cron.required = false;
+            }
         }
         
         function updateTaskConfig() {
@@ -2107,10 +2157,15 @@
                 config.maxFollowers = parseInt(document.getElementById('configMaxFollowers').value) || 50;
             }
             
+            const scheduleType = document.getElementById('scheduleType').value;
+            const runAtVal = document.getElementById('runAt').value;
+
             const payload = {
                 name: document.getElementById('taskName').value,
                 taskType: taskType,
-                cronExpression: document.getElementById('cronExpression').value,
+                scheduleType,
+                cronExpression: scheduleType === 'cron' ? document.getElementById('cronExpression').value : undefined,
+                runAt: scheduleType === 'once' ? (runAtVal ? new Date(runAtVal).toISOString() : undefined) : undefined,
                 timezone: document.getElementById('taskTimezone').value,
                 config: config,
                 enabled: document.getElementById('taskEnabled').checked
@@ -2150,6 +2205,30 @@
         function closeTaskModal() {
             const modal = document.getElementById('taskModal');
             if (modal) modal.remove();
+        }
+
+        async function refreshServerTime() {
+            const serverTimeEl = document.getElementById('serverTimeValue');
+            const serverTzEl = document.getElementById('serverTzValue');
+            if (!serverTimeEl || !serverTzEl) return;
+            const result = await apiCall('/api/time');
+            if (result?.serverTimeIso) {
+                const dt = new Date(result.serverTimeIso);
+                serverTimeEl.textContent = isNaN(dt.getTime()) ? String(result.serverTimeIso) : dt.toLocaleString();
+                serverTzEl.textContent = result.serverTimezone || 'UTC';
+            } else {
+                serverTimeEl.textContent = 'Unavailable';
+                serverTzEl.textContent = '—';
+            }
+        }
+
+        function startLocalClock() {
+            const localEl = document.getElementById('localTimeValue');
+            if (!localEl) return;
+            localEl.textContent = new Date().toLocaleTimeString();
+            setInterval(() => {
+                localEl.textContent = new Date().toLocaleTimeString();
+            }, 1000);
         }
     </script>
 </body>

@@ -5,7 +5,9 @@ export interface IScheduledTask extends Document {
     name: string;
     taskType: 'campaign' | 'stories' | 'dm_monitor' | 'profile_scrape';
     enabled: boolean;
-    cronExpression: string;
+    scheduleType: 'cron' | 'once';
+    cronExpression?: string;
+    runAt?: Date;
     timezone?: string;
     config: {
         // Campaign config
@@ -47,7 +49,9 @@ const scheduledTaskSchema: Schema<IScheduledTask> = new Schema({
         enum: ['campaign', 'stories', 'dm_monitor', 'profile_scrape']
     },
     enabled: { type: Boolean, default: true },
-    cronExpression: { type: String, required: true },
+    scheduleType: { type: String, enum: ['cron', 'once'], default: 'cron' },
+    cronExpression: { type: String },
+    runAt: { type: Date },
     timezone: { type: String, default: 'America/New_York' },
     config: { type: Schema.Types.Mixed, default: {} },
     lastRun: { type: Date },
@@ -60,6 +64,7 @@ const scheduledTaskSchema: Schema<IScheduledTask> = new Schema({
 // Create indexes
 scheduledTaskSchema.index({ enabled: 1, nextRun: 1 });
 scheduledTaskSchema.index({ taskType: 1 });
+scheduledTaskSchema.index({ scheduleType: 1, runAt: 1 });
 
 // Update the updatedAt field before saving
 scheduledTaskSchema.pre('save', function(next) {
