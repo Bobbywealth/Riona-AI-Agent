@@ -1096,6 +1096,7 @@
         const API_URL = window.location.origin;
 
         const aiChatHistory = [];
+        let schedulerLoaded = false;
 
         async function apiCall(endpoint, method = 'GET', body = null) {
             try {
@@ -1154,7 +1155,13 @@
                     }
                     el.innerHTML = items
                         .map(({ item, msg }) => {
-                            const ts = item.timestamp ? new Date(item.timestamp).toLocaleTimeString() : '';
+                            // The server log timestamp is often a time-only string (e.g. "3:39:25 AM"),
+                            // which `new Date()` treats as invalid. Prefer showing the raw string.
+                            const rawTs = typeof item.timestamp === 'string' ? item.timestamp : '';
+                            const d = rawTs ? new Date(rawTs) : null;
+                            const ts = rawTs
+                                ? (d && !Number.isNaN(d.getTime()) ? d.toLocaleTimeString() : rawTs)
+                                : '';
                             const safe = (msg || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
                             return `<div class="rail-item">${safe}<small>${ts}</small></div>`;
                         })
@@ -1343,6 +1350,9 @@
                     localStorage.setItem('savedUsername', username);
                 }
                 checkStatus();
+                // Now that the JWT cookie is set, reload scheduler data.
+                schedulerLoaded = false;
+                loadScheduledTasks();
             }
         }
 
@@ -1359,6 +1369,9 @@
             statusDiv.innerHTML = '🚪 Logged out';
             addLog('✅ Logged out successfully');
             checkStatus();
+            schedulerLoaded = false;
+            const tasksList = document.getElementById('scheduledTasksList');
+            if (tasksList) tasksList.innerHTML = '<p style="text-align: center; color: #6b7280;">Login to manage scheduled tasks.</p>';
         }
 
         async function clearCookies() {
@@ -1453,6 +1466,12 @@
                 // Update status message
                 loginStatus.className = 'status-message success mt-2';
                 loginStatus.innerHTML = `✅ Logged in${result.username ? ' as @' + result.username : ''}`;
+
+                // Scheduler is protected by JWT auth; once authenticated, load tasks.
+                if (!schedulerLoaded) {
+                    schedulerLoaded = true;
+                    loadScheduledTasks();
+                }
             } else {
                 // Update badge
                 badge.className = 'status-badge offline';
@@ -1465,6 +1484,9 @@
                 // Update status message
                 loginStatus.className = 'status-message error mt-2';
                 loginStatus.innerHTML = '❌ Not logged in';
+                schedulerLoaded = false;
+                const tasksList = document.getElementById('scheduledTasksList');
+                if (tasksList) tasksList.innerHTML = '<p style="text-align: center; color: #6b7280;">Login to manage scheduled tasks.</p>';
             }
         }
 
