@@ -45,6 +45,24 @@ echo "📱 Instagram Login Status:"
 pm2 logs riona-bot --lines 100 --nostream 2>&1 | grep -i "login\|logged\|cookie" | tail -5
 echo ""
 
+echo "⏰ Scheduler Status:"
+if [ -f "/root/Riona-AI-Agent/.env" ]; then
+  echo "ENABLE_SCHEDULER in .env:"
+  grep -E "^ENABLE_SCHEDULER=" /root/Riona-AI-Agent/.env || echo "(not set)"
+else
+  echo "⚠️ .env not found at /root/Riona-AI-Agent/.env"
+fi
+echo ""
+
+echo "Scheduler endpoint (/api/scheduler/status):"
+curl -s --max-time 3 http://127.0.0.1:3000/api/scheduler/status || echo "❌ Could not reach http://127.0.0.1:3000 (is the server running?)"
+echo ""
+echo ""
+
+echo "Scheduler logs (last 20 scheduler lines):"
+pm2 logs riona-bot --lines 200 --nostream 2>&1 | grep -i "scheduler" | tail -20 || true
+echo ""
+
 echo "✅ Status check complete!"
 echo ""
 echo "💡 To view live logs: pm2 logs riona-bot"

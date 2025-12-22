@@ -61,11 +61,14 @@ app.get('*', (_req, res) => {
 });
 
 // Start the scheduler
-if (process.env.ENABLE_SCHEDULER === 'true') {
-    startScheduler();
-    logger.info('Instagram automation scheduler enabled');
+// Default ON (Jarvee-style) unless explicitly disabled
+const schedulerDisabled =
+  String(process.env.ENABLE_SCHEDULER || '').toLowerCase() === 'false';
+if (!schedulerDisabled) {
+  startScheduler();
+  logger.info('Instagram automation scheduler enabled');
 } else {
-    logger.info('Scheduler disabled. Set ENABLE_SCHEDULER=true in .env to enable automatic scheduling');
+  logger.info('Scheduler disabled via ENABLE_SCHEDULER=false');
 }
 
 /*
