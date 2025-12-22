@@ -819,9 +819,16 @@ router.post('/interact', async (req: Request, res: Response) => {
       delete interactionOptions.engagement;
     }
 
-    await igClient.interactWithPosts(targetUsername, maxPosts || 5, interactionOptions);
-    return res.json({
-      message: 'Interaction successful',
+    // Kick off the job in the background so reverse proxies (nginx) don't 504 on long runs.
+    // The UI can follow progress via `/api/logs/recent`.
+    setImmediate(() => {
+      igClient
+        .interactWithPosts(targetUsername, maxPosts || 5, interactionOptions)
+        .catch((error) => logger.error('Interaction error (background):', error));
+    });
+
+    return res.status(202).json({
+      message: 'Interaction started',
       mode: interactionOptions.mode || 'feed',
     });
   } catch (error) {
@@ -898,8 +905,13 @@ router.post('/stories/watch', async (req: Request, res: Response) => {
         : undefined,
     };
 
-    await igClient.watchStories(options);
-    return res.json({ message: 'Stories viewed successfully' });
+    // Kick off the job in the background so reverse proxies (nginx) don't 504 on long story sessions.
+    // The UI can follow progress via `/api/logs/recent`.
+    setImmediate(() => {
+      igClient.watchStories(options).catch((error) => logger.error('Stories watch error (background):', error));
+    });
+
+    return res.status(202).json({ message: 'Story watching started' });
   } catch (error) {
     logger.error('Stories watch error:', error);
     return res.status(500).json({ error: 'Failed to watch stories' });
@@ -910,8 +922,12 @@ router.post('/stories/watch', async (req: Request, res: Response) => {
 router.post('/monitor-dms', async (req: Request, res: Response) => {
   try {
     const igClient = await getIgClient((req as any).user.username);
-    await igClient.monitorAndReplyToDMs();
-    return res.json({ message: 'DM monitoring completed' });
+    // DM monitoring can be long-running; start in background to avoid gateway timeouts.
+    setImmediate(() => {
+      igClient.monitorAndReplyToDMs().catch((error) => logger.error('DM monitoring error (background):', error));
+    });
+
+    return res.status(202).json({ message: 'DM monitoring started' });
   } catch (error) {
     logger.error('DM monitoring error:', error);
     return res.status(500).json({ error: 'Failed to monitor DMs' });

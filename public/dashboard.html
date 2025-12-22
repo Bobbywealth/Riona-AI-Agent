@@ -878,7 +878,21 @@
                 if (body) options.body = JSON.stringify(body);
                 
                 const response = await fetch(`${API_URL}${endpoint}`, options);
-                return await response.json();
+                const contentType = response.headers.get('content-type') || '';
+                const isJson = contentType.includes('application/json');
+
+                if (isJson) {
+                    const data = await response.json();
+                    if (!response.ok && !data?.error) {
+                        return { error: `HTTP ${response.status} ${response.statusText}` };
+                    }
+                    return data;
+                }
+
+                // Non-JSON responses happen when nginx returns an HTML error page (502/504/etc).
+                const text = await response.text();
+                const snippet = text ? text.slice(0, 200).replace(/\s+/g, ' ').trim() : '';
+                return { error: `HTTP ${response.status} ${response.statusText}${snippet ? `: ${snippet}` : ''}` };
             } catch (error) {
                 console.error('API Error:', error);
                 return { error: error.message };
