@@ -293,6 +293,7 @@ export class IgClient {
         this.browser = await puppeteerExtra.launch({
             headless: true, // Run in headless mode (no GUI needed on server)
             args: launchArgs,
+            executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/nix/store/qa9cnw4v5xkxyip6mb9kxqfq1z4x2dx1-chromium-138.0.7204.100/bin/chromium',
         });
         this.page = await this.browser.newPage();
         
@@ -385,16 +386,70 @@ export class IgClient {
         logger.info("Logging in with credentials...");
         await this.page.goto("https://www.instagram.com/accounts/login/", {
             waitUntil: "networkidle2",
+            timeout: 60000
         });
         await delay(3000); // Wait for page to fully render
-        await this.page.waitForSelector('input[name="username"]', { timeout: 60000 });
+        
+        // Handle cookie consent popup (appears in EU and many regions)
+        await this.handleCookieConsent();
+        
+        // Take a debug screenshot to see what the page looks like
+        try {
+            await this.captureGenericPageScreenshot(this.page, 'debug', 'before-login-form');
+            logger.info("📸 Captured debug screenshot before login");
+        } catch (e) {
+            // Ignore screenshot errors
+        }
+        
+        // Wait for login form with better error handling
+        try {
+            await this.page.waitForSelector('input[name="username"]', { timeout: 30000 });
+        } catch (error) {
+            // Take screenshot for debugging
+            await this.captureGenericPageScreenshot(this.page, 'debug', 'login-form-not-found');
+            const pageContent = await this.page.content();
+            logger.error("Login form not found. Page content snippet: " + pageContent.substring(0, 500));
+            throw new Error("Could not find Instagram login form. Instagram may be blocking or showing a different page.");
+        }
+        
         await delay(1000);
         await this.page.type('input[name="username"]', this.username, { delay: 100 });
         await delay(500);
         await this.page.type('input[name="password"]', this.password, { delay: 100 });
         await delay(1000);
         await this.page.click('button[type="submit"]');
-        await this.page.waitForNavigation({ waitUntil: "networkidle2" });
+        
+        // Wait for navigation with timeout handling
+        try {
+            await this.page.waitForNavigation({ waitUntil: "networkidle2", timeout: 30000 });
+        } catch (error) {
+            logger.warn("Navigation timeout after login submit - checking if login succeeded anyway");
+        }
+        
+        // Check if we're still on login page (login might have failed)
+        const currentUrl = this.page.url();
+        if (currentUrl.includes('/accounts/login/') || currentUrl.includes('/challenge/')) {
+            await this.captureGenericPageScreenshot(this.page, 'debug', 'login-failed');
+            
+            // Check for specific error messages
+            const errorText = await this.page.evaluate(() => {
+                const errorEl = document.querySelector('[role="alert"]') || 
+                               document.querySelector('.eiCW-') ||
+                               document.querySelector('#slfErrorAlert');
+                return errorEl?.textContent || '';
+            });
+            
+            if (errorText) {
+                logger.error("Login error message: " + errorText);
+            }
+            
+            if (currentUrl.includes('/challenge/')) {
+                throw new Error("Instagram requires verification challenge. Please try logging in manually first.");
+            }
+            
+            throw new Error("Login failed. Check credentials or Instagram may be blocking automated login.");
+        }
+        
         const cookies = await this.page.cookies();
         await saveCookies("./cookies/Instagramcookies.json", cookies);
         logger.info("Successfully logged in and saved cookies.");
@@ -403,6 +458,71 @@ export class IgClient {
         // Capture screenshot after login
         console.log(`📸 Capturing post-login screenshot...`);
         await this.captureGenericPageScreenshot(this.page, 'feed-screens', 'after-login');
+    }
+    
+    private async handleCookieConsent() {
+        if (!this.page) return;
+        
+        logger.info("Checking for cookie consent popup...");
+        
+        try {
+            // Common cookie consent button selectors for Instagram
+            const consentSelectors = [
+                'button[class*="aOOlW"][class*="bIiDR"]', // Instagram's "Allow all cookies" button
+                'button:has-text("Allow all cookies")',
+                'button:has-text("Allow essential and optional cookies")',
+                'button:has-text("Accept")',
+                'button:has-text("Accept All")',
+                'button:has-text("Accept Cookies")',
+                'button:has-text("Decline optional cookies")', // Alternative - decline optional but accept essential
+                '[data-testid="cookie-policy-manage-dialog-accept-button"]'
+            ];
+            
+            // Try to find and click any consent button
+            for (const selector of consentSelectors) {
+                try {
+                    const button = await this.page.$(selector);
+                    if (button) {
+                        logger.info(`Found cookie consent button: ${selector}`);
+                        await button.click();
+                        await delay(2000);
+                        logger.info("Cookie consent handled.");
+                        return;
+                    }
+                } catch (e) {
+                    // Selector not found or click failed, try next
+                }
+            }
+            
+            // Alternative: Look for buttons by text content
+            const buttons = await this.page.$$('button');
+            for (const button of buttons) {
+                try {
+                    const text = await button.evaluate((el: Element) => el.textContent?.toLowerCase() || '');
+                    if (text.includes('allow') && (text.includes('cookie') || text.includes('all'))) {
+                        logger.info(`Clicking cookie consent button with text: "${text}"`);
+                        await button.click();
+                        await delay(2000);
+                        logger.info("Cookie consent handled via text match.");
+                        return;
+                    }
+                    // Also try "decline optional" as it still allows essential cookies
+                    if (text.includes('decline') && text.includes('optional')) {
+                        logger.info(`Clicking decline optional cookies button: "${text}"`);
+                        await button.click();
+                        await delay(2000);
+                        logger.info("Cookie consent handled (declined optional).");
+                        return;
+                    }
+                } catch (e) {
+                    // Button evaluation failed, continue
+                }
+            }
+            
+            logger.info("No cookie consent popup detected or already handled.");
+        } catch (error) {
+            logger.warn("Error handling cookie consent: " + (error as Error).message);
+        }
     }
 
     private async checkForRateLimit(): Promise<boolean> {
