@@ -10,6 +10,9 @@ import { runAgent } from '../Agent';
 import { getAutomationCommandSchema } from '../Agent/schema';
 import { Instagram_cookiesExist } from '../utils';
 import type { InteractionOptions, StoryOptions } from '../client/IG-bot/types';
+// @ts-ignore
+import { CronJob } from 'cron';
+import ScheduledTask from '../models/ScheduledTask';
 
 const router = express.Router();
 
@@ -1072,4 +1075,118 @@ router.post('/proxy/test', async (req: Request, res: Response) => {
 });
 
 // Proxy configuration endpoints
+
+// Scheduled Tasks endpoints
+
+// Get all scheduled tasks
+router.get('/scheduled-tasks', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const tasks = await ScheduledTask.find().sort({ createdAt: -1 });
+    return res.json({ success: true, tasks });
+  } catch (error) {
+    logger.error('Error fetching scheduled tasks:', error);
+    return res.status(500).json({ error: 'Failed to fetch scheduled tasks' });
+  }
+});
+
+// Create a new scheduled task
+router.post('/scheduled-tasks', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const { name, taskType, cronExpression, timezone, config, enabled } = req.body;
+    
+    if (!name || !taskType || !cronExpression) {
+      return res.status(400).json({ error: 'Name, taskType, and cronExpression are required' });
+    }
+
+    // Validate cron expression
+    try {
+      new CronJob(cronExpression, () => {}, null, false, timezone || 'America/New_York');
+    } catch (error) {
+      return res.status(400).json({ error: 'Invalid cron expression' });
+    }
+
+    const task = new ScheduledTask({
+      name,
+      taskType,
+      cronExpression,
+      timezone: timezone || 'America/New_York',
+      config: config || {},
+      enabled: enabled !== undefined ? enabled : true
+    });
+
+    await task.save();
+    return res.json({ success: true, task });
+  } catch (error) {
+    logger.error('Error creating scheduled task:', error);
+    return res.status(500).json({ error: 'Failed to create scheduled task' });
+  }
+});
+
+// Update a scheduled task
+router.put('/scheduled-tasks/:id', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { name, taskType, cronExpression, timezone, config, enabled } = req.body;
+
+    const task = await ScheduledTask.findById(id);
+    if (!task) {
+      return res.status(404).json({ error: 'Task not found' });
+    }
+
+    if (cronExpression) {
+      // Validate cron expression
+      try {
+        new CronJob(cronExpression, () => {}, null, false, timezone || task.timezone);
+      } catch (error) {
+        return res.status(400).json({ error: 'Invalid cron expression' });
+      }
+      task.cronExpression = cronExpression;
+    }
+
+    if (name) task.name = name;
+    if (taskType) task.taskType = taskType;
+    if (timezone) task.timezone = timezone;
+    if (config) task.config = { ...task.config, ...config };
+    if (enabled !== undefined) task.enabled = enabled;
+
+    await task.save();
+    return res.json({ success: true, task });
+  } catch (error) {
+    logger.error('Error updating scheduled task:', error);
+    return res.status(500).json({ error: 'Failed to update scheduled task' });
+  }
+});
+
+// Delete a scheduled task
+router.delete('/scheduled-tasks/:id', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const task = await ScheduledTask.findByIdAndDelete(id);
+    if (!task) {
+      return res.status(404).json({ error: 'Task not found' });
+    }
+    return res.json({ success: true, message: 'Task deleted' });
+  } catch (error) {
+    logger.error('Error deleting scheduled task:', error);
+    return res.status(500).json({ error: 'Failed to delete scheduled task' });
+  }
+});
+
+// Toggle task enabled/disabled
+router.patch('/scheduled-tasks/:id/toggle', requireAuth, async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const task = await ScheduledTask.findById(id);
+    if (!task) {
+      return res.status(404).json({ error: 'Task not found' });
+    }
+    task.enabled = !task.enabled;
+    await task.save();
+    return res.json({ success: true, task });
+  } catch (error) {
+    logger.error('Error toggling scheduled task:', error);
+    return res.status(500).json({ error: 'Failed to toggle scheduled task' });
+  }
+});
+
 export default router; 
