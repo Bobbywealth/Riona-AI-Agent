@@ -31,6 +31,39 @@ const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const languageDetector = new LanguageDetect();
 languageDetector.setLanguageType('iso2');
 
+async function resolvePuppeteerExecutablePath(): Promise<string | undefined> {
+    const envPath = process.env.PUPPETEER_EXECUTABLE_PATH?.trim();
+    if (envPath) {
+        try {
+            await fs.access(envPath);
+            return envPath;
+        } catch {
+            logger.warn(`⚠️ PUPPETEER_EXECUTABLE_PATH is set but not found: ${envPath}`);
+        }
+    }
+
+    // Common Linux locations (Ubuntu/Debian)
+    const candidates = [
+        '/usr/bin/google-chrome-stable',
+        '/usr/bin/google-chrome',
+        '/usr/bin/chromium-browser',
+        '/usr/bin/chromium',
+        '/snap/bin/chromium',
+    ];
+
+    for (const candidate of candidates) {
+        try {
+            await fs.access(candidate);
+            return candidate;
+        } catch {
+            // keep trying
+        }
+    }
+
+    // Let Puppeteer decide (bundled Chromium) if available.
+    return undefined;
+}
+
 type ProfileInspectionResult = {
     approved: boolean;
     username?: string;
@@ -296,14 +329,25 @@ export class IgClient {
             logger.info('📡 No proxy configured, using direct connection');
         }
         
-        this.browser = await puppeteerExtra.launch({
+        const resolvedExecutablePath = await resolvePuppeteerExecutablePath();
+        if (resolvedExecutablePath) {
+            logger.info(`🌐 Using browser executable: ${resolvedExecutablePath}`);
+        } else if (process.env.PUPPETEER_EXECUTABLE_PATH) {
+            // env var exists but was invalid; already logged a warning above.
+        } else {
+            logger.info('🌐 Using Puppeteer default browser (no executablePath override)');
+        }
+
+        const launchOptions: any = {
             headless: true, // Run in headless mode (no GUI needed on server)
             // Prevent CDP calls from timing out on slower VPS/IG pages.
             // Fixes errors like: Runtime.callFunctionOn timed out / Page.captureScreenshot timed out.
             protocolTimeout: parseInt(process.env.PUPPETEER_PROTOCOL_TIMEOUT || '180000', 10),
             args: launchArgs,
-            executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/nix/store/qa9cnw4v5xkxyip6mb9kxqfq1z4x2dx1-chromium-138.0.7204.100/bin/chromium',
-        });
+        };
+        if (resolvedExecutablePath) launchOptions.executablePath = resolvedExecutablePath;
+
+        this.browser = await puppeteerExtra.launch(launchOptions);
         this.page = await this.browser.newPage();
         
         // Set realistic user agent

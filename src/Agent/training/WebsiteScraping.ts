@@ -2,6 +2,37 @@ import puppeteer from "puppeteer";
 import DOMPurify from "dompurify";
 import { JSDOM } from "jsdom";
 import { saveScrapedData } from "../../utils";
+import fs from "fs/promises";
+
+async function resolvePuppeteerExecutablePath(): Promise<string | undefined> {
+  const envPath = process.env.PUPPETEER_EXECUTABLE_PATH?.trim();
+  if (envPath) {
+    try {
+      await fs.access(envPath);
+      return envPath;
+    } catch {
+      // ignore and fall back
+    }
+  }
+
+  const candidates = [
+    "/usr/bin/google-chrome-stable",
+    "/usr/bin/google-chrome",
+    "/usr/bin/chromium-browser",
+    "/usr/bin/chromium",
+    "/snap/bin/chromium",
+  ];
+  for (const candidate of candidates) {
+    try {
+      await fs.access(candidate);
+      return candidate;
+    } catch {
+      // keep trying
+    }
+  }
+
+  return undefined;
+}
 
 // Function to clean the HTML content
 function cleanHTML(inputHtml: string): string {
@@ -15,11 +46,12 @@ function cleanHTML(inputHtml: string): string {
 // Function to scrape and clean content from a given URL using Puppeteer
 async function scrapeAndCleanContent(url: string): Promise<string | null> {
   try {
+    const executablePath = await resolvePuppeteerExecutablePath();
     // Launch a Puppeteer browser instance with additional options
     const browser = await puppeteer.launch({
       headless: true,
       args: ["--no-sandbox", "--disable-setuid-sandbox"],
-      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/nix/store/qa9cnw4v5xkxyip6mb9kxqfq1z4x2dx1-chromium-138.0.7204.100/bin/chromium',
+      ...(executablePath ? { executablePath } : {}),
     });
     const page = await browser.newPage();
 
@@ -48,10 +80,11 @@ async function scrapeAndCleanContent(url: string): Promise<string | null> {
 // Function to get all links from a given URL
 async function getAllLinks(url: string): Promise<string[]> {
   try {
+    const executablePath = await resolvePuppeteerExecutablePath();
     const browser = await puppeteer.launch({
       headless: true,
       args: ["--no-sandbox", "--disable-setuid-sandbox"],
-      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/nix/store/qa9cnw4v5xkxyip6mb9kxqfq1z4x2dx1-chromium-138.0.7204.100/bin/chromium',
+      ...(executablePath ? { executablePath } : {}),
     });
     const page = await browser.newPage();
 
