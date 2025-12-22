@@ -703,6 +703,90 @@ router.get('/logs/recent', async (req: Request, res: Response) => {
   }
 });
 
+// Daily metrics (derived from today's log file)
+router.get('/metrics/daily', async (req: Request, res: Response) => {
+  try {
+    const now = new Date();
+    const dateSlug = now.toISOString().split('T')[0];
+    const logPath = path.join(logsDirectory, `${dateSlug}-combined.log`);
+    const includeDebug =
+      req.query.includeDebug === '1' || req.query.includeDebug === 'true' || req.query.includeDebug === 'yes';
+    const debugLogPath = path.join(logsDirectory, `${dateSlug}-debug.log`);
+
+    if (!(await fileExists(logPath)) && !(includeDebug && (await fileExists(debugLogPath)))) {
+      return res.json({
+        date: dateSlug,
+        counts: {
+          campaignLikes: 0,
+          campaignComments: 0,
+          dmsSent: 0,
+          dmRepliesSent: 0,
+          storyViews: 0,
+          storyLikes: 0,
+          storyReacts: 0,
+          storyRepliesSent: 0,
+        },
+      });
+    }
+
+    const rawLines: string[] = [];
+    if (await fileExists(logPath)) {
+      const raw = await fs.readFile(logPath, 'utf-8');
+      rawLines.push(...raw.trim().split(/\r?\n/).filter(Boolean));
+    }
+    if (includeDebug && (await fileExists(debugLogPath))) {
+      const rawDebug = await fs.readFile(debugLogPath, 'utf-8');
+      rawLines.push(...rawDebug.trim().split(/\r?\n/).filter(Boolean));
+    }
+
+    const counts = {
+      campaignLikes: 0,
+      campaignComments: 0,
+      dmsSent: 0,
+      dmRepliesSent: 0,
+      storyViews: 0,
+      storyLikes: 0,
+      storyReacts: 0,
+      storyRepliesSent: 0,
+    };
+
+    for (const line of rawLines) {
+      let msg = '';
+      try {
+        const parsed = JSON.parse(line);
+        msg = typeof parsed?.message === 'string' ? parsed.message : String(parsed?.message || '');
+      } catch {
+        msg = line;
+      }
+      if (!msg) continue;
+
+      // Campaign
+      if (msg.includes('❤️ Liked post')) counts.campaignLikes++;
+      if (msg.includes('💬 Comment posted') || msg.includes('Comment posted on post')) counts.campaignComments++;
+
+      // DMs
+      if (msg.includes('💬 DM sent') || msg.includes('📨 DM sent to @') || msg.includes('Message sent successfully')) {
+        counts.dmsSent++;
+      }
+      if (msg.includes('📬 DM Monitor: ✅ reply sent') || msg.includes('📬 DM Monitor: ✅ reply sent')) {
+        counts.dmRepliesSent++;
+      }
+
+      // Stories
+      if (msg.includes('👀 Viewing story')) counts.storyViews++;
+      if (msg.includes('❤️ Liked story')) counts.storyLikes++;
+      if (msg.includes('💬 Reacted to story')) counts.storyReacts++;
+      if (msg.includes('✅ Story reply sent') || msg.includes('Story reply sent')) counts.storyRepliesSent++;
+    }
+
+    res.setHeader('Cache-Control', 'no-store');
+    return res.json({ date: dateSlug, counts });
+  } catch (error) {
+    logger.error('Daily metrics error:', error);
+    return res.status(500).json({ error: 'Failed to compute daily metrics' });
+  }
+});
+
 // Screenshots endpoint - also accessible without auth for debugging
 router.get('/screenshots/list', async (req: Request, res: Response) => {
   try {

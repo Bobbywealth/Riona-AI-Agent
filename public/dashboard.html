@@ -722,6 +722,7 @@
         <div id="systemOverview" style="display:flex;flex-wrap:wrap;gap:8px;margin:10px 0 16px 0;">
             <span class="pill" id="pillServerTime">⏱️ Server: …</span>
             <span class="pill" id="pillUptime">🧠 Uptime: …</span>
+            <span class="pill" id="pillToday">📊 Today: …</span>
             <span class="pill" id="pillDb">🗄️ DB: …</span>
             <span class="pill" id="pillProxy">🌐 Proxy: …</span>
             <span class="pill" id="pillAi">🤖 Gemini: …</span>
@@ -2723,11 +2724,12 @@
 
         async function refreshSystemOverview() {
             try {
-                const [timeRes, statusRes, proxyRes, aiRes] = await Promise.all([
+                const [timeRes, statusRes, proxyRes, aiRes, metricsRes] = await Promise.all([
                     apiCall('/api/time'),
                     apiCall('/api/status'),
                     apiCall('/api/proxy/status'),
                     apiCall('/api/ai/status'),
+                    apiCall('/api/metrics/daily'),
                 ]);
 
                 if (timeRes?.serverTimeIso) {
@@ -2759,6 +2761,14 @@
                     setPill('pillAi', `🤖 Gemini: ${configured ? `configured (${aiRes.keysConfigured})` : 'not set'}`, configured ? 'ok' : 'bad');
                 } else {
                     setPill('pillAi', '🤖 Gemini: unknown', 'warn');
+                }
+
+                if (metricsRes && !metricsRes.error && metricsRes.counts) {
+                    const c = metricsRes.counts;
+                    const text = `📊 Today: ❤️ ${c.campaignLikes || 0} · 💬 ${c.campaignComments || 0} · 📩 ${c.dmsSent || 0} · ↩️ ${c.dmRepliesSent || 0} · 👀 ${c.storyViews || 0}`;
+                    setPill('pillToday', text, 'neutral');
+                } else {
+                    setPill('pillToday', '📊 Today: unknown', 'warn');
                 }
             } catch {
                 // ignore

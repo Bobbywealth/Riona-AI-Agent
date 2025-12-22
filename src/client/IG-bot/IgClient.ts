@@ -1581,11 +1581,11 @@ Return JSON only.`;
                 const shouldLike = Math.random() > 0.2;
                 
                 if (ariaLabel === "Like" && likeButton && shouldLike) {
-                    console.log(`Liking post ${postIndex}...`);
+                    logger.info(`${runId ? `[run:${runId}] ` : ''}❤️ Liking post ${postIndex}${targetUsername ? ` target=@${targetUsername}` : ''}`);
                     await delay(Math.random() * 1000 + 500); // Random delay before clicking
                     await likeButton.click();
                     await page.keyboard.press("Enter");
-                    console.log(`Post ${postIndex} liked.`);
+                    logger.info(`${runId ? `[run:${runId}] ` : ''}❤️ Liked post ${postIndex}${targetUsername ? ` target=@${targetUsername}` : ''}`);
                     await this.showOverlayMessage(`❤️ Liked post ${postIndex}`, 'success');
                 } else if (ariaLabel === "Unlike") {
                     console.log(`Post ${postIndex} is already liked.`);
@@ -1756,7 +1756,7 @@ IMPORTANT: Write in clear, proper English only. No typos, no gibberish, no rando
                         const schema = getInstagramCommentSchema();
                         const result = await runAgent(schema, prompt, undefined, imageBase64);
                         const comment = (result[0]?.comment ?? "") as string;
-                        console.log(`Generated comment for post ${postIndex}: "${comment}"`);
+                        logger.info(`${runId ? `[run:${runId}] ` : ''}🤖 Generated comment for post ${postIndex}${targetUsername ? ` target=@${targetUsername}` : ''}: "${comment.replace(/\s+/g, ' ').trim()}"`);
                         
                         // Type slower and more human-like with random delays between characters
                         await commentBox.click();
@@ -1783,7 +1783,7 @@ IMPORTANT: Write in clear, proper English only. No typos, no gibberish, no rando
                         if (postButtonElement) {
                             console.log(`Posting comment on post ${postIndex}...`);
                             await (postButtonElement as puppeteer.ElementHandle<Element>).click();
-                            console.log(`Comment posted on post ${postIndex}.`);
+                            logger.info(`${runId ? `[run:${runId}] ` : ''}💬 Comment posted on post ${postIndex}${targetUsername ? ` target=@${targetUsername}` : ''}`);
                             await this.showOverlayMessage(`💬 Commented on post ${postIndex}`, 'success');
                             
                             // Mark this post as commented (in-memory)
@@ -1825,6 +1825,7 @@ IMPORTANT: Write in clear, proper English only. No typos, no gibberish, no rando
                                 );
                                 if (dmSent) {
                                     outboundDMsSent++;
+                                    logger.info(`${runId ? `[run:${runId}] ` : ''}💬 DM sent target=@${profileInsights.username}`);
                                     await this.showOverlayMessage(`📨 DM sent to @${profileInsights.username}`, 'success');
                                 }
                             }
