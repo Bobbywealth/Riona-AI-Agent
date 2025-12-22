@@ -1841,7 +1841,17 @@
             }
             
             const logs = document.getElementById('logs');
-            let lines = result.logs || [];
+            const rawLogs = result.logs || [];
+            let lines = rawLogs.map((item) => {
+                if (typeof item === 'string') return item;
+                if (item && typeof item === 'object') {
+                    const ts = item.timestamp ? String(item.timestamp) : '';
+                    const level = item.level ? String(item.level) : 'info';
+                    const msg = item.message ? String(item.message) : JSON.stringify(item);
+                    return `${ts} ${level}: ${msg}`;
+                }
+                return String(item);
+            });
             
             // Filter based on detail level
             const detailLevel = document.getElementById('logDetailLevel')?.value || 'all';
@@ -1853,7 +1863,8 @@
                            line.includes('Starting') || line.includes('Complete') ||
                            line.includes('Liked story') || line.includes('AI replied') ||
                            line.includes('Reply sent') || line.includes('Campaign') ||
-                           line.includes('logged in') || line.includes('Failed');
+                           line.includes('logged in') || line.includes('Failed') ||
+                           line.includes('DM Monitor') || line.includes('💬 DM');
                 });
             }
             

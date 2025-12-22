@@ -705,9 +705,11 @@ export class IgClient {
         return false;
     }
 
-    async sendDirectMessage(username: string, message: string) {
+    async sendDirectMessage(username: string, message: string, options: { runId?: string } = {}) {
         if (!this.page) throw new Error("Page not initialized");
         try {
+            const runId = options.runId ? String(options.runId) : null;
+            logger.info(`${runId ? `[run:${runId}] ` : ''}💬 DM send requested: target=@${username.replace(/^@/, '').trim()} (len=${message?.length ?? 0})`);
             await this.sendDirectMessageWithMedia(username, message);
         } catch (error) {
             logger.error("Failed to send direct message", error);
@@ -715,12 +717,14 @@ export class IgClient {
         }
     }
 
-    async monitorAndReplyToDMs(maxConversations: number = 5) {
+    async monitorAndReplyToDMs(maxConversations: number = 5, options: { runId?: string } = {}) {
         if (!this.page) throw new Error("Page not initialized");
         const page = this.page;
+        const runId = options.runId ? String(options.runId) : null;
+        const prefix = `${runId ? `[run:${runId}] ` : ''}📬 DM Monitor`;
         
         try {
-            console.log("Checking DMs for new messages...");
+            logger.info(`${prefix}: starting (maxConversations=${maxConversations})`);
             
             // Navigate to DMs page
             await page.goto("https://www.instagram.com/direct/inbox/", {
@@ -733,7 +737,7 @@ export class IgClient {
             const dismissed = await this.dismissAllPopups();
             
             if (dismissed) {
-                console.log("Waiting for page to stabilize after popup dismissal...");
+                logger.info(`${prefix}: popup dismissed; waiting to stabilize`);
                 await delay(5000); // Wait longer after dismissing popup for page to reload
             } else {
                 await delay(2000);
@@ -749,14 +753,14 @@ export class IgClient {
                 const target = Math.min(batchSize, remaining);
                 const conversationItems = await this.loadConversationItems(target, 4, offset);
                 if (!conversationItems.length) {
-                    console.log("No additional conversation items found. Current URL:", page.url());
+                    logger.info(`${prefix}: no additional conversation items found (url=${page.url()})`);
                     break;
                 }
-                console.log(`Loaded ${conversationItems.length} conversation items for batch starting at row ${offset + 1}`);
+                logger.info(`${prefix}: loaded ${conversationItems.length} items (startRow=${offset + 1})`);
                 
                 for (let index = 0; index < conversationItems.length && processed < maxConversations; index++) {
                 try {
-                    console.log(`\n=== Checking conversation ${processed + 1}/${maxConversations} (row ${offset + index + 1}) ===`);
+                    logger.info(`${prefix}: checking conversation (${processed + 1}/${maxConversations}, row=${offset + index + 1})`);
                     
                     // Go back to inbox before clicking next conversation
                     if (processed > 0) {
@@ -783,21 +787,45 @@ export class IgClient {
                     await delay(3000);
                     await this.dismissAllPopups();
                     
-                    const conversationTitle = await page.evaluate(() => {
+                    const conversationMeta = await page.evaluate(() => {
                         const selectors = ['header h2', 'header h1', 'header span'];
+                        const getUsernameFromHref = (href: string) => {
+                            if (!href) return null;
+                            const clean = href.split('?')[0];
+                            const parts = clean.split('/').filter(Boolean);
+                            const first = parts[0] || null;
+                            if (!first) return null;
+                            if (first === 'direct' || first === 'accounts' || first === 'explore') return null;
+                            return first;
+                        };
+
+                        const header = document.querySelector('header') || document;
+                        const links = Array.from(header.querySelectorAll('a[href^="/"]')) as HTMLAnchorElement[];
+                        let peerUsername: string | null = null;
+                        for (const a of links) {
+                            const href = a.getAttribute('href') || '';
+                            const u = getUsernameFromHref(href);
+                            if (u) { peerUsername = u; break; }
+                        }
+
+                        let title = 'conversation';
                         for (const selector of selectors) {
                             const el = document.querySelector(selector);
                             if (el && el.textContent && el.textContent.trim().length) {
-                                return el.textContent.trim();
+                                title = el.textContent.trim();
+                                break;
                             }
                         }
-                        return 'conversation';
+                        return { title, peerUsername };
                     });
+                    const conversationTitle = conversationMeta?.title || 'conversation';
+                    const peerUsername = conversationMeta?.peerUsername ? String(conversationMeta.peerUsername) : null;
                     
                     // Check if we've already replied to this conversation
-                    const conversationId = conversationTitle.toLowerCase().replace(/\s+/g, '_');
+                    const conversationKeyRaw = (peerUsername ? `@${peerUsername}` : conversationTitle).trim();
+                    const conversationId = conversationKeyRaw.toLowerCase().replace(/\s+/g, '_');
                     if (this.repliedConversations.has(conversationId)) {
-                        console.log(`⏭️ Skipped: already replied to "${conversationTitle}" in a previous session`);
+                        logger.info(`${prefix}: skipped (already replied) peer=${peerUsername ? `@${peerUsername}` : 'unknown'} title="${conversationTitle}"`);
                         processed++;
                         continue;
                     }
@@ -865,16 +893,16 @@ export class IgClient {
                     let messageTexts = snapshot?.texts ?? [];
                     let lastMessageText = messageTexts.length ? messageTexts[messageTexts.length - 1] : null;
                     
-                    console.log(`Last messages: "${messageTexts.join(' | ')}"`);
+                    logger.info(`${prefix}: peer=${peerUsername ? `@${peerUsername}` : 'unknown'} lastMessages="${messageTexts.join(' | ')}"`);
                     
                     if (!lastMessageText || lastMessageText.length < 2) {
-                        console.log(`No valid message text found in conversation ${index + 1}`);
+                        logger.info(`${prefix}: skipped (no valid last message) peer=${peerUsername ? `@${peerUsername}` : 'unknown'} title="${conversationTitle}"`);
                         index++;
                         continue;
                     }
                     
                     if (snapshot?.lastIsSelf) {
-                        console.log('⏭️ Skipped: last message was sent by the bot.');
+                        logger.info(`${prefix}: skipped (last message was self) peer=${peerUsername ? `@${peerUsername}` : 'unknown'} title="${conversationTitle}"`);
                         // Mark as replied so we don't check again
                         this.repliedConversations.add(conversationId);
                         await this.saveRepliedConversations();
@@ -883,15 +911,15 @@ export class IgClient {
                     }
 
                     if (isPlaceholderOnly(messageTexts)) {
-                        console.log('Detected placeholder-only content, reloading conversation...');
+                        logger.info(`${prefix}: placeholder-only content detected; retrying peer=${peerUsername ? `@${peerUsername}` : 'unknown'}`);
                         await delay(2000);
                         snapshot = await fetchSnapshot();
                         messageTexts = snapshot?.texts ?? [];
                         lastMessageText = messageTexts.length ? messageTexts[messageTexts.length - 1] : null;
-                        console.log(`Refreshed messages: "${messageTexts.join(' | ')}"`);
+                        logger.info(`${prefix}: refreshed messages peer=${peerUsername ? `@${peerUsername}` : 'unknown'} lastMessages="${messageTexts.join(' | ')}"`);
 
                         if (!lastMessageText || isPlaceholderOnly(messageTexts)) {
-                            console.log('Still placeholder content after refresh. Skipping.');
+                            logger.info(`${prefix}: skipped (still placeholder after refresh) peer=${peerUsername ? `@${peerUsername}` : 'unknown'}`);
                             index++;
                             continue;
                         }
@@ -901,7 +929,7 @@ export class IgClient {
                     const normalizedLastText = lastMessageText.toLowerCase();
                     const containsAttachment = normalizedLastText.includes('sent an attachment');
                     if (containsAttachment) {
-                        console.log('Skipped: last message appears to be an attachment without text.');
+                        logger.info(`${prefix}: skipped (attachment/no text) peer=${peerUsername ? `@${peerUsername}` : 'unknown'}`);
                         index++;
                         continue;
                     }
@@ -909,7 +937,7 @@ export class IgClient {
                     const shouldReply = true;
                     
                     if (shouldReply) {
-                        console.log(`✅ Message needs a reply!`);
+                        logger.info(`${prefix}: reply needed peer=${peerUsername ? `@${peerUsername}` : 'unknown'} title="${conversationTitle}"`);
                         
                         // Generate AI reply based on the conversation
                         const { runAgent } = await import('../../Agent');
@@ -929,11 +957,11 @@ Generate a friendly, helpful reply that:
                         const result = await runAgent(schema, prompt);
                         const reply = (result[0]?.comment ?? "Thanks for reaching out! 😊") as string;
                         
-                        console.log(`Generated AI reply: "${reply}"`);
+                        logger.info(`${prefix}: generated reply peer=${peerUsername ? `@${peerUsername}` : 'unknown'} reply="${reply.replace(/\s+/g, ' ').trim()}"`);
                         
                         const screenshotPath = await this.captureConversationScreenshot(conversationTitle || `conversation-${processed + 1}`);
                         if (screenshotPath) {
-                            console.log(`📸 Conversation screenshot saved to ${screenshotPath}`);
+                            logger.info(`${prefix}: screenshot saved peer=${peerUsername ? `@${peerUsername}` : 'unknown'} path=${screenshotPath}`);
                         }
                         
                         // Type and send reply
@@ -949,7 +977,7 @@ Generate a friendly, helpful reply that:
                             
                             await delay(1000);
                             await page.keyboard.press('Enter');
-                            console.log(`✅ Reply sent successfully to "${conversationTitle}"`);
+                            logger.info(`${prefix}: ✅ reply sent peer=${peerUsername ? `@${peerUsername}` : 'unknown'} title="${conversationTitle}"`);
                             
                             // Mark this conversation as replied
                             this.repliedConversations.add(conversationId);
@@ -959,12 +987,12 @@ Generate a friendly, helpful reply that:
                             await delay(Math.random() * 5000 + 3000);
                         }
                     } else {
-                        console.log(`Message doesn't need a reply (no greeting/question detected)`);
+                        logger.info(`${prefix}: no reply needed peer=${peerUsername ? `@${peerUsername}` : 'unknown'} title="${conversationTitle}"`);
                     }
                     
                     processed++;
                 } catch (convError) {
-                    console.error(`Error processing conversation ${offset + index + 1}:`, convError);
+                    logger.error(`${prefix}: error processing conversation (row=${offset + index + 1})`, convError as any);
                     processed++; // Count as processed even if it errored, to avoid infinite loop
                 }
                 }
@@ -972,7 +1000,7 @@ Generate a friendly, helpful reply that:
                 offset += conversationItems.length;
                 
                 if (processed < maxConversations) {
-                    console.log(`Processed ${processed}/${maxConversations}. Loading next batch...`);
+                    logger.info(`${prefix}: processed ${processed}/${maxConversations}; loading next batch...`);
                     await delay(3000);
                 }
             }
@@ -980,16 +1008,16 @@ Generate a friendly, helpful reply that:
             if (!processed) {
                 try {
                     await page.screenshot({ path: '/tmp/dm-inbox-debug.png' });
-                    console.log("Screenshot saved to /tmp/dm-inbox-debug.png");
+                    logger.info(`${prefix}: debug screenshot saved path=/tmp/dm-inbox-debug.png`);
                 } catch (e) {
-                    console.error("Failed to take screenshot");
+                    logger.warn(`${prefix}: failed to take debug screenshot`);
                 }
             }
             
-            console.log("Finished checking DMs");
+            logger.info(`${prefix}: finished`);
             
         } catch (error) {
-            logger.error("Error monitoring DMs:", error);
+            logger.error(`${prefix}: fatal error`, error as any);
             throw error;
         }
     }

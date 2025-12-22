@@ -991,7 +991,7 @@ router.post('/monitor-dms', async (req: Request, res: Response) => {
     setImmediate(() => {
       logger.info(`[run:${runId}] 📬 DM monitoring started`);
       igClient
-        .monitorAndReplyToDMs()
+        .monitorAndReplyToDMs(5, { runId })
         .then(() => logger.info(`[run:${runId}] ✅ DM monitoring finished`))
         .catch((error) => logger.error(`[run:${runId}] ❌ DM monitoring error (background):`, error));
     });

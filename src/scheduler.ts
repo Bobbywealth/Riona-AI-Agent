@@ -75,7 +75,7 @@ async function executeScheduledTask(task: any) {
       }
       case 'dm_monitor': {
         const cfg = task.config || {};
-        await igClient.monitorAndReplyToDMs(cfg.maxConversations ?? 5);
+        await igClient.monitorAndReplyToDMs(cfg.maxConversations ?? 5, { runId });
         break;
       }
       case 'profile_scrape': {
