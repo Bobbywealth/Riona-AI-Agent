@@ -549,14 +549,26 @@
             display: flex;
             gap: 12px;
             margin-top: 14px;
+            align-items: stretch;
         }
 
         .ai-chat-input input {
             flex: 1;
+            width: auto; /* override global input width:100% inside flex */
+            min-width: 0; /* allow flexbox to size correctly */
             padding: 12px;
             border-radius: 10px;
             border: 1px solid #d1d5db;
             font-size: 0.95rem;
+        }
+
+        /* Fix: global `button { width: 100%; }` breaks the chat input row */
+        .ai-chat-input button {
+            width: auto;
+            flex: 0 0 auto;
+            margin-top: 0;
+            padding: 12px 18px;
+            border-radius: 10px;
         }
 
         .ai-log-snippet {
