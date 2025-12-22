@@ -997,32 +997,102 @@ Generate a friendly, helpful reply that:
     async sendDirectMessageWithMedia(username: string, message: string, mediaPath?: string) {
         if (!this.page) throw new Error("Page not initialized");
         try {
-            await this.page.goto(`https://www.instagram.com/${username}/`, {
+            const page = this.page;
+            const normalizedUsername = username.replace(/^@/, '').trim();
+            const profileUrl = `https://www.instagram.com/${normalizedUsername}/`;
+
+            const openComposerViaDirectNew = async () => {
+                // More reliable than the profile "Message" button (which can be "Send message", icon-only, or absent)
+                await page.goto('https://www.instagram.com/direct/new/', { waitUntil: 'networkidle2', timeout: 60000 });
+                await delay(2000);
+                await this.handleNotificationPopup();
+
+                const searchSelectors = [
+                    'input[name="queryBox"]',
+                    'input[placeholder="Search..."]',
+                    'input[aria-label="Search input"]',
+                    'input[aria-label="Search"]',
+                    'input[type="text"]',
+                ];
+                let searchInput: puppeteer.ElementHandle<Element> | null = null;
+                for (const selector of searchSelectors) {
+                    try {
+                        await page.waitForSelector(selector, { timeout: 6000 });
+                        searchInput = await page.$(selector);
+                        if (searchInput) break;
+                    } catch {
+                        // continue
+                    }
+                }
+                if (!searchInput) throw new Error('DM compose search input not found.');
+
+                await (searchInput as puppeteer.ElementHandle<Element>).click({ clickCount: 3 });
+                await delay(200);
+                await page.keyboard.press('Backspace');
+                await delay(200);
+                await (searchInput as puppeteer.ElementHandle<Element>).type(normalizedUsername, { delay: 60 });
+                await delay(1500);
+
+                // Select the user from the results list (click the row containing the username)
+                const selected = await page.evaluate((uname) => {
+                    const lower = uname.toLowerCase();
+                    const dialog = document.querySelector('div[role="dialog"]') || document;
+                    const candidates = Array.from(dialog.querySelectorAll('div[role="button"], div[role="row"], div'));
+                    const row = candidates.find((el) => {
+                        const text = (el.textContent || '').trim().toLowerCase();
+                        return text === lower || text.startsWith(lower + '\n') || text.includes('\n' + lower);
+                    });
+                    if (!row) return false;
+                    (row as HTMLElement).click();
+                    return true;
+                }, normalizedUsername);
+                if (!selected) throw new Error(`DM recipient "${normalizedUsername}" not found in composer results.`);
+
+                // Click Next
+                const nextClicked = await page.evaluate(() => {
+                    const buttons = Array.from(document.querySelectorAll('button, div[role="button"]'));
+                    const next = buttons.find((el) => (el.textContent || '').trim().toLowerCase() === 'next');
+                    if (!next) return false;
+                    (next as HTMLElement).click();
+                    return true;
+                });
+                if (!nextClicked) throw new Error('DM composer "Next" button not found.');
+
+                await delay(1500);
+            };
+
+            await page.goto(profileUrl, {
                 waitUntil: "networkidle2",
             });
             console.log("Navigated to user profile");
             await delay(3000);
 
-            const messageButtonSelectors = ['div[role="button"]', "button", 'a[href*="/direct/t/"]', 'div[role="button"] span', 'div[role="button"] div'];
-            let messageButton: puppeteer.ElementHandle<Element> | null = null;
-            for (const selector of messageButtonSelectors) {
-                const elements = await this.page.$$(selector);
-                for (const element of elements) {
-                    const text = await element.evaluate((el: Element) => el.textContent);
-                    if (text && text.trim() === "Message") {
-                        messageButton = element;
-                        break;
-                    }
-                }
-                if (messageButton) break;
-            }
-            if (!messageButton) throw new Error("Message button not found.");
-            await messageButton.click();
-            await delay(2000); // Wait for message modal to open
             await this.handleNotificationPopup();
+            await this.captureGenericPageScreenshot(page, 'dm-outreach', `${normalizedUsername}-profile-manual`);
+
+            // Prefer profile Message button if present, otherwise fall back to /direct/new
+            const messageButtonHandle = await page.evaluateHandle(() => {
+                const candidates = Array.from(document.querySelectorAll('button, div[role="button"], a'));
+                return (
+                    candidates.find((el) => {
+                        const text = (el.textContent || '').trim().toLowerCase();
+                        const aria = (el.getAttribute('aria-label') || '').trim().toLowerCase();
+                        return text === 'message' || text === 'send message' || aria === 'message';
+                    }) || null
+                );
+            });
+            const messageButton = messageButtonHandle?.asElement();
+            if (messageButton) {
+                await (messageButton as puppeteer.ElementHandle<Element>).click();
+                await delay(2000);
+                await this.handleNotificationPopup();
+            } else {
+                logger.warn(`DM: Message button not found on profile @${normalizedUsername}, using /direct/new fallback`);
+                await openComposerViaDirectNew();
+            }
 
             if (mediaPath) {
-                const fileInput = await this.page.$('input[type="file"]');
+                const fileInput = await page.$('input[type="file"]');
                 if (fileInput) {
                     await fileInput.uploadFile(mediaPath);
                     await this.handleNotificationPopup();
@@ -1035,7 +1105,7 @@ Generate a friendly, helpful reply that:
             const messageInputSelectors = ['textarea[placeholder="Message..."]', 'div[role="textbox"]', 'div[contenteditable="true"]', 'textarea[aria-label="Message"]'];
             let messageInput: puppeteer.ElementHandle<Element> | null = null;
             for (const selector of messageInputSelectors) {
-                messageInput = await this.page.$(selector);
+                messageInput = await page.$(selector);
                 if (messageInput) break;
             }
             if (!messageInput) throw new Error("Message input not found.");
@@ -1046,7 +1116,7 @@ Generate a friendly, helpful reply that:
             const sendButtonSelectors = ['div[role="button"]', "button"];
             let sendButton: puppeteer.ElementHandle<Element> | null = null;
             for (const selector of sendButtonSelectors) {
-                const elements = await this.page.$$(selector);
+                const elements = await page.$$(selector);
                 for (const element of elements) {
                     const text = await element.evaluate((el: Element) => el.textContent);
                     if (text && text.trim() === "Send") {
